@@ -6,7 +6,8 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from .models import User
 from .serializers import UserSerializer, UserListSerializer
-
+from django.urls import path
+from . import views
 
 class UserSerializer(serializers.ModelSerializer):
     """
@@ -54,3 +55,10 @@ def list_users(request):
     users = User.objects.exclude(id=request.user.id)
     serializer = UserListSerializer(users, many=True)
     return Response(serializer.data)
+
+
+urlpatterns = [
+    path('profile/', views.get_profile, name='user-profile'),
+    path('profile/update/', views.update_profile, name='user-update'),
+    path('list/', views.list_users, name='user-list'),
+]
