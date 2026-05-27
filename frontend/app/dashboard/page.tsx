@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { getUser, logout, isAuthenticated } from '@/lib/auth'
 import { User, Task } from '@/types'
@@ -17,17 +17,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
 
-  useEffect(() => {
-    if (!isAuthenticated()) {
-      router.push('/login')
-      return
-    }
-    const currentUser = getUser()
-    setUser(currentUser)
-    loadTasks()
-  }, [router])
-
-  const loadTasks = async () => {
+  const loadTasks = useCallback(async () => {
     try {
       setLoading(true)
       const data = await fetchTasks()
@@ -37,17 +27,26 @@ export default function DashboardPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  // task stats calculate karo
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      router.push('/login')
+      return
+    }
+    const currentUser = getUser()
+    setUser(currentUser)
+    loadTasks()
+  }, [router, loadTasks])
+
   const pendingTasks = tasks.filter(t => t.status === 'pending').length
   const inProgressTasks = tasks.filter(t => t.status === 'in_progress').length
   const completedTasks = tasks.filter(t => t.status === 'completed').length
+  const createdByMe = tasks.filter(t => t.created_by.id === user?.id)
+  const assignedToMe = tasks.filter(t => t.assigned_to?.id === user?.id)
 
   return (
     <div className="min-h-screen bg-gray-50">
-
-      {/* Navbar */}
       <nav className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -58,11 +57,7 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center gap-4">
             {user?.avatar && (
-              <img
-                src={user.avatar}
-                alt={user.name}
-                className="w-8 h-8 rounded-full"
-              />
+              <img src={user.avatar} alt={user.name} className="w-8 h-8 rounded-full" />
             )}
             <span className="text-sm text-gray-600">{user?.name}</span>
             <button
@@ -77,8 +72,6 @@ export default function DashboardPage() {
       </nav>
 
       <div className="max-w-6xl mx-auto px-6 py-8">
-
-        {/* Stats Cards */}
         <div className="grid grid-cols-3 gap-4 mb-8">
           <div className="bg-white rounded-xl p-5 border border-gray-200">
             <div className="flex items-center gap-3">
@@ -115,7 +108,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Tasks Header */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-gray-900">My Tasks</h2>
           <button
@@ -127,30 +119,45 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        {/* Tasks List */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : tasks.length === 0 ? (
-          <div className="text-center py-20">
-            <p className="text-gray-400 text-lg">No tasks yet</p>
-            <p className="text-gray-300 text-sm mt-1">Create your first task to get started</p>
-          </div>
         ) : (
-          <div className="grid gap-4">
-            {tasks.map(task => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                onUpdate={loadTasks}
-              />
-            ))}
+          <div className="space-y-8">
+            <div>
+              <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">
+                Created by me ({createdByMe.length})
+              </h3>
+              {createdByMe.length === 0 ? (
+                <p className="text-gray-300 text-sm py-4">No tasks created yet</p>
+              ) : (
+                <div className="grid gap-3">
+                  {createdByMe.map(task => (
+                    <TaskCard key={task.id} task={task} onUpdate={loadTasks} />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">
+                Assigned to me ({assignedToMe.length})
+              </h3>
+              {assignedToMe.length === 0 ? (
+                <p className="text-gray-300 text-sm py-4">No tasks assigned yet</p>
+              ) : (
+                <div className="grid gap-3">
+                  {assignedToMe.map(task => (
+                    <TaskCard key={task.id} task={task} onUpdate={loadTasks} />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
 
-      {/* Create Task Modal */}
       {showCreateModal && (
         <CreateTaskModal
           onClose={() => setShowCreateModal(false)}
