@@ -24,7 +24,10 @@ def task_list_create(request):
         serializer = TaskSerializer(data=request.data)
         if serializer.is_valid():
             task = serializer.save(created_by=request.user)
-            send_task_created_email(task)
+            try:
+                send_task_created_email(task)
+            except Exception as e:
+                print(f'Email error: {e}')
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -46,9 +49,11 @@ def task_detail(request, pk):
         serializer = TaskSerializer(task, data=request.data, partial=True)
         if serializer.is_valid():
             updated_task = serializer.save()
-            # agar status completed hua to email bhejo
-            if old_status != 'completed' and updated_task.status == 'completed':
-                send_task_completed_email(updated_task)
+            try:
+                if old_status != 'completed' and updated_task.status == 'completed':
+                    send_task_completed_email(updated_task)
+            except Exception as e:
+                print(f'Email error: {e}')
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
