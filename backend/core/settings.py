@@ -100,6 +100,10 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '').strip()
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '').strip()
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
+# Resend API - Production Fallback (Uses HTTPS port 443 which is never blocked by cloud firewalls)
+RESEND_API_KEY = os.getenv('RESEND_API_KEY', '').strip()
+RESEND_SENDER_EMAIL = os.getenv('RESEND_SENDER_EMAIL', 'onboarding@resend.dev').strip()
+
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_ANON_KEY = os.getenv('SUPABASE_ANON_KEY')
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
