@@ -8,7 +8,39 @@ from .models import Task
 from .serializers import TaskSerializer
 from .email_service import send_task_created_email, send_task_completed_email
 
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from django.conf import settings
+import os
+
 logger = logging.getLogger(__name__)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def system_health_check(request):
+    """
+    Standard health check endpoint to verify backend status, database connectivity,
+    and confirm environment variable configuration (CORS-safe).
+    """
+    db_status = "Healthy"
+    try:
+        from django.db import connection
+        connection.ensure_connection()
+    except Exception as e:
+        db_status = f"Unhealthy: {str(e)}"
+
+    email_user = getattr(settings, 'EMAIL_HOST_USER', '')
+    email_password = getattr(settings, 'EMAIL_HOST_PASSWORD', '')
+
+    return Response({
+        "status": "online",
+        "database_connectivity": db_status,
+        "environment_variables": {
+            "EMAIL_HOST_USER_configured": bool(email_user),
+            "EMAIL_HOST_PASSWORD_configured": bool(email_password),
+        }
+    }, status=status.HTTP_200_OK)
+
 
 
 @api_view(['GET', 'POST'])
