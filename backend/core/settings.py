@@ -114,6 +114,7 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
+
 # CORS Headers & Methods
 CORS_ALLOW_HEADERS = [
     'accept',
@@ -128,5 +129,3 @@ CORS_ALLOW_HEADERS = [
 ]
 CORS_ALLOW_METHODS = ['DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST', 'PUT']
 
-# Email debug — startup pe verify karo ki env variables loaded hain
-print(f"[EMAIL CONFIG] HOST_USER={'SET' if EMAIL_HOST_USER else 'MISSING'}, PASSWORD={'SET' if EMAIL_HOST_PASSWORD else 'MISSING'}")

@@ -1,26 +1,34 @@
 import smtplib
 import traceback
+import threading
 from django.core.mail import send_mail
 from django.conf import settings
 
 
-def _send_email(subject, message, recipient):
+def _send_email_worker(subject, message, recipient):
     """
-    Synchronous email sender — no threading, no daemon.
-    Production mein daemon threads silently die ho jaate hain
-    isliye direct synchronous call reliable hai.
+    Background worker that runs inside a thread.
+    Uses strict timeouts to prevent hanging on network-restricted platforms like Railway.
     """
     try:
-        print(f"[EMAIL] Attempting to send email to {recipient}")
-        print(f"[EMAIL] Using HOST_USER: {settings.EMAIL_HOST_USER}")
-        print(f"[EMAIL] Using HOST: {settings.EMAIL_HOST}:{settings.EMAIL_PORT}")
-        print(f"[EMAIL] TLS: {settings.EMAIL_USE_TLS}, SSL: {getattr(settings, 'EMAIL_USE_SSL', False)}")
-        print(f"[EMAIL] FROM: {settings.DEFAULT_FROM_EMAIL}")
-
+        print(f"[EMAIL THREAD] Starting SMTP send to {recipient}")
+        
         if not settings.EMAIL_HOST_USER or not settings.EMAIL_HOST_PASSWORD:
-            print("[EMAIL] ERROR: EMAIL_HOST_USER or EMAIL_HOST_PASSWORD is empty! Check .env file.")
-            return False
+            print("[EMAIL THREAD] ERROR: SMTP credentials missing in settings.")
+            return
 
+        # Explicitly test connection with a very low timeout first
+        print(f"[EMAIL THREAD] Verifying connection to {settings.EMAIL_HOST}:{settings.EMAIL_PORT}...")
+        try:
+            # Low timeout of 3 seconds so we don't hang the worker if blocked by Railway firewall
+            conn = smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT, timeout=3)
+            conn.quit()
+            print("[EMAIL THREAD] Port is open and reachable!")
+        except Exception as conn_err:
+            print(f"[EMAIL THREAD] NETWORK BLOCK ALERT: Port is blocked or unreachable: {conn_err}")
+            return
+
+        # Attempt actual Django send_mail
         result = send_mail(
             subject=subject,
             message=message,
@@ -28,28 +36,37 @@ def _send_email(subject, message, recipient):
             recipient_list=[recipient],
             fail_silently=False,
         )
-        print(f"[EMAIL] SUCCESS — sent to {recipient}, result={result}")
-        return True
+        print(f"[EMAIL THREAD] SUCCESS: Sent to {recipient}, result={result}")
 
-    except smtplib.SMTPAuthenticationError as e:
-        print(f"[EMAIL] SMTP AUTH ERROR: Gmail credentials galat hain ya App Password invalid hai. Error: {e}")
-        return False
-    except smtplib.SMTPException as e:
-        print(f"[EMAIL] SMTP ERROR: {e}")
-        traceback.print_exc()
-        return False
     except Exception as e:
-        print(f"[EMAIL] UNEXPECTED ERROR: {e}")
+        print(f"[EMAIL THREAD] ERROR: Failed sending mail: {e}")
         traceback.print_exc()
-        return False
+
+
+def _send_email_async(subject, message, recipient):
+    """
+    Launches the email sender in a separate thread.
+    This ensures that even if SMTP is blocked, the HTTP request is NOT blocked.
+    """
+    try:
+        thread = threading.Thread(
+            target=_send_email_worker,
+            args=(subject, message, recipient)
+        )
+        thread.daemon = True
+        thread.start()
+        print(f"[EMAIL ASYNC] Thread dispatched for recipient: {recipient}")
+    except Exception as e:
+        print(f"[EMAIL ASYNC] Thread dispatch failed: {e}")
+        traceback.print_exc()
 
 
 def send_task_created_email(task):
-    """Task create hone par email bhejo"""
+    """Task creation email entry point"""
     try:
         recipient = task.assigned_to or task.created_by
         if not recipient or not recipient.email:
-            print(f"[EMAIL] No valid recipient for task: {task.title}")
+            print(f"[EMAIL] Invalid recipient for task: {task.title}")
             return
 
         subject = f'New Task: {task.title}'
@@ -61,19 +78,18 @@ def send_task_created_email(task):
             f'Team Hairdrama'
         )
 
-        _send_email(subject, message, recipient.email)
-        print(f"[EMAIL] Task creation email processed for: {task.title}")
+        _send_email_async(subject, message, recipient.email)
 
     except Exception as e:
-        print(f"[EMAIL] Error in send_task_created_email: {e}")
+        print(f"[EMAIL] Exception in send_task_created_email dispatch: {e}")
         traceback.print_exc()
 
 
 def send_task_completed_email(task):
-    """Task complete hone par email bhejo"""
+    """Task completion email entry point"""
     try:
         if not task.created_by or not task.created_by.email:
-            print(f"[EMAIL] No valid creator email for task: {task.title}")
+            print(f"[EMAIL] Invalid creator for task: {task.title}")
             return
 
         subject = f'Task Completed: {task.title}'
@@ -83,9 +99,8 @@ def send_task_completed_email(task):
             f'Team Hairdrama'
         )
 
-        _send_email(subject, message, task.created_by.email)
-        print(f"[EMAIL] Task completion email processed for: {task.title}")
+        _send_email_async(subject, message, task.created_by.email)
 
     except Exception as e:
-        print(f"[EMAIL] Error in send_task_completed_email: {e}")
+        print(f"[EMAIL] Exception in send_task_completed_email dispatch: {e}")
         traceback.print_exc()
