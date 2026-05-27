@@ -84,15 +84,20 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOWED_ORIGINS = [
+    'https://frontend-psi-drab-28.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:3001',
+]
 CORS_ALLOW_CREDENTIALS = True
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
+EMAIL_USE_SSL = False  # TLS aur SSL dono True nahi ho sakte — sirf TLS chahiye
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '').strip()
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '').strip()
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 SUPABASE_URL = os.getenv('SUPABASE_URL')
@@ -109,11 +114,19 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
-# Force CORS
-CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_HEADERS = ['*']
+# CORS Headers & Methods
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
 CORS_ALLOW_METHODS = ['DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST', 'PUT']
 
-EMAIL_USE_SSL = True
-EMAIL_USE_TLS = False
-EMAIL_PORT = 465
+# Email debug — startup pe verify karo ki env variables loaded hain
+print(f"[EMAIL CONFIG] HOST_USER={'SET' if EMAIL_HOST_USER else 'MISSING'}, PASSWORD={'SET' if EMAIL_HOST_PASSWORD else 'MISSING'}")
