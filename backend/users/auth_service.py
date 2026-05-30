@@ -1,23 +1,41 @@
 import os
+import logging
 import requests
 from django.conf import settings
 from .models import User
 
+logger = logging.getLogger(__name__)
+
+
 def verify_google_token(token):
+    client_id = (getattr(settings, 'GOOGLE_CLIENT_ID', None) or '').strip()
     try:
-        response = requests.get(f'https://oauth2.googleapis.com/tokeninfo?id_token={token}', timeout=10)
+        response = requests.get(
+            f'https://oauth2.googleapis.com/tokeninfo?id_token={token}',
+            timeout=10,
+        )
         if response.status_code == 200:
-            return response.json()
-        
+            data = response.json()
+            aud = data.get('aud') or data.get('azp')
+            if client_id and aud and aud != client_id:
+                logger.warning('Google aud mismatch: token=%s env=%s', aud, client_id)
+                return None
+            if not data.get('email'):
+                logger.warning('Google token missing email')
+                return None
+            return data
+
         response = requests.get(
             'https://www.googleapis.com/oauth2/v3/userinfo',
             headers={'Authorization': f'Bearer {token}'},
-            timeout=10
+            timeout=10,
         )
         if response.status_code == 200:
             return response.json()
+        logger.warning('Google verify failed: %s', response.status_code)
         return None
-    except Exception:
+    except Exception as e:
+        logger.exception('Google verify error: %s', e)
         return None
 
 def verify_github_code(code):

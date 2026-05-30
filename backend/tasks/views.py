@@ -15,6 +15,23 @@ from .ai_service import trigger_bg_generation
 
 logger = logging.getLogger(__name__)
 
+
+def _can_access_task(user, task):
+    if user.role == 'admin':
+        return True
+    if task.assigned_to_id == user.id:
+        return True
+    if task.created_by_id == user.id:
+        return True
+    return False
+
+
+def _can_work_on_task(user, task):
+    if user.role == 'admin':
+        return True
+    return task.assigned_to_id == user.id
+
+
 class AIGeneratorThrottle(UserRateThrottle):
     scope = 'ai_generate'
 
@@ -90,7 +107,7 @@ def my_tasks(request):
 def task_detail(request, pk):
     task = get_object_or_404(Task, pk=pk)
 
-    if request.user.role != 'admin' and task.assigned_to != request.user:
+    if not _can_access_task(request.user, task):
         return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
     if request.method == 'GET':
@@ -164,7 +181,7 @@ def request_revision(request, pk):
 @permission_classes([IsAuthenticated])
 def start_task(request, pk):
     task = get_object_or_404(Task, pk=pk)
-    if task.assigned_to != request.user:
+    if not _can_work_on_task(request.user, task):
         return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
         
     task.status = 'in_progress'
@@ -177,7 +194,7 @@ def start_task(request, pk):
 @permission_classes([IsAuthenticated])
 def submit_task(request, pk):
     task = get_object_or_404(Task, pk=pk)
-    if task.assigned_to != request.user:
+    if not _can_work_on_task(request.user, task):
         return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
         
     if task.generations.count() < 8:
@@ -199,7 +216,7 @@ def submit_task(request, pk):
 @throttle_classes([AIGeneratorThrottle])
 def trigger_generation(request, pk):
     task = get_object_or_404(Task, pk=pk)
-    if task.assigned_to != request.user:
+    if not _can_work_on_task(request.user, task):
         return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
     image_type = request.data.get('image_type')
@@ -246,7 +263,7 @@ def poll_job_status(request, job_id):
 @permission_classes([IsAuthenticated])
 def get_generations(request, pk):
     task = get_object_or_404(Task, pk=pk)
-    if request.user.role != 'admin' and task.assigned_to != request.user:
+    if not _can_access_task(request.user, task):
         return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
         
     generations = task.generations.all()

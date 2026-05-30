@@ -32,8 +32,10 @@ function LoginContent() {
           saveUser(user)
           toast.success(`Welcome back, ${user.name}!`)
           router.push('/dashboard')
-        } catch {
-          toast.error('GitHub login failed. Please try again.')
+        } catch (err: unknown) {
+          const ax = err as { response?: { data?: { error?: string; detail?: string } } }
+          const msg = ax.response?.data?.detail || ax.response?.data?.error || 'GitHub login failed.'
+          toast.error(msg)
         } finally {
           setLoading(false)
         }
@@ -54,8 +56,14 @@ function LoginContent() {
       saveUser(user)
       toast.success(`Welcome back, ${user.name}!`)
       router.push('/dashboard')
-    } catch {
-      toast.error('Google login failed. Please try again.')
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { error?: string; detail?: string } }; message?: string }
+      const msg =
+        ax.response?.data?.detail ||
+        ax.response?.data?.error ||
+        (ax.message?.includes('Network') ? 'Cannot reach API — check NEXT_PUBLIC_API_URL on Vercel' : null) ||
+        'Google login failed.'
+      toast.error(msg)
     } finally {
       setLoading(false)
     }

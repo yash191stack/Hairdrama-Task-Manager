@@ -33,18 +33,26 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const [angle, setAngle] = useState('none')
   const [prompt, setPrompt] = useState('')
   const [theme, setTheme] = useState('')
+  const [accessDenied, setAccessDenied] = useState(false)
 
   const loadTaskData = useCallback(async () => {
     try {
       setLoading(true)
+      setAccessDenied(false)
       const taskData = await fetchTask(id)
       setTask(taskData)
 
       const genData = await fetchGenerations(id)
       setGenerations(genData)
-    } catch {
-      toast.error('Failed to load task details')
-      router.push('/dashboard')
+    } catch (err: unknown) {
+      const ax = err as { response?: { status?: number; data?: { error?: string } } }
+      if (ax.response?.status === 403) {
+        setAccessDenied(true)
+        toast.error('You do not have access to this task')
+      } else {
+        toast.error(ax.response?.data?.error || 'Failed to load task details')
+        router.push('/dashboard')
+      }
     } finally {
       setLoading(false)
     }
@@ -170,10 +178,26 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     )
   }
 
+  if (accessDenied) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-4 px-6">
+        <p className="text-gray-700 font-semibold">You do not have access to this task.</p>
+        <p className="text-gray-500 text-sm text-center max-w-md">
+          Only the assignee or an admin can open AI Studio. Ask an admin to assign this task to you.
+        </p>
+        <Link href="/dashboard" className="text-indigo-600 text-sm font-bold hover:underline">
+          Back to dashboard
+        </Link>
+      </div>
+    )
+  }
+
   if (!task) return null
 
   const isAssignedToMe = task.assigned_to?.id === currentUser?.id
-  const canGenerate = isAssignedToMe && task.status === 'in_progress'
+  const isAdmin = currentUser?.role === 'admin'
+  const canWorkOnTask = isAdmin || isAssignedToMe
+  const canGenerate = canWorkOnTask && task.status === 'in_progress'
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
@@ -217,7 +241,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
               </div>
             </div>
 
-            {isAssignedToMe && task.status === 'assigned' && (
+            {canWorkOnTask && task.status === 'assigned' && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>
                   <p className="text-blue-900 text-sm font-bold">Ready to start?</p>
@@ -326,9 +350,9 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                 </div>
               ) : (
                 <div className="text-center py-6 text-gray-400 text-xs font-medium border border-gray-300 border-dashed rounded">
-                  {isAssignedToMe
+                  {canWorkOnTask
                     ? 'Start work on the task to unlock AI Generation panel'
-                    : 'Only the assigned user can execute AI generations.'}
+                    : 'Only the assignee or admin can use AI Studio.'}
                 </div>
               )}
             </div>
@@ -360,7 +384,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
               )}
             </div>
 
-            {isAssignedToMe && task.status === 'in_progress' && (
+            {canWorkOnTask && task.status === 'in_progress' && (
               <div className="bg-white border border-gray-200 rounded-lg p-5 space-y-3.5">
                 <div>
                   <h3 className="text-xs font-bold text-gray-900 uppercase tracking-wider">Submit Deliverables</h3>
