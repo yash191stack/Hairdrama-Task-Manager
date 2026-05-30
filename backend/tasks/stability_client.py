@@ -44,14 +44,18 @@ def _parse_error(resp):
         return f"Stability API error ({resp.status_code}): {resp.text[:300]}"
 
 
-def _poll_result(job_id, timeout=240):
+def _poll_result(job_id, timeout=180, poll_interval=1.5):
     url = f"{API_ROOT}/results/{job_id}"
     headers = _auth_headers("*/*")
     started = time.time()
+    attempts = 0
 
     while time.time() - started < timeout:
+        attempts += 1
         resp = requests.get(url, headers=headers, timeout=60)
         if resp.status_code == 200:
+            elapsed = round(time.time() - started, 1)
+            logger.info("stability job %s done in %ss (%s polls)", job_id, elapsed, attempts)
             ct = resp.headers.get("Content-Type", "")
             if "image" in ct or resp.content[:4] in (b"\x89PNG", b"\xff\xd8\xff"):
                 return resp.content
@@ -67,7 +71,7 @@ def _poll_result(job_id, timeout=240):
             raise StabilityError("Stability returned empty result", resp.status_code, resp.text[:200])
 
         if resp.status_code == 202:
-            time.sleep(3)
+            time.sleep(poll_interval)
             continue
 
         raise StabilityError(_parse_error(resp), resp.status_code, resp.text[:500])
@@ -112,8 +116,11 @@ def _post_async(endpoint, files, data=None):
     if not job_id:
         raise StabilityError("Stability did not return a job id", payload=payload)
 
-    logger.info("stability job %s polling...", job_id)
-    return _poll_result(job_id)
+    t0 = time.time()
+    logger.info("stability job %s queued (%s)", job_id, endpoint)
+    out = _poll_result(job_id)
+    logger.info("stability total %.1fs for %s", time.time() - t0, endpoint)
+    return out
 
 
 def remove_background(image_bytes, output_format="png"):

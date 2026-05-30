@@ -1,95 +1,118 @@
-NEGATIVE = (
+NEGATIVE_BASE = (
     "cartoon, illustration, anime, low quality, blurry, deformed jewelry, "
-    "wrong product, duplicate necklace, extra clasps, watermark, text, logo, "
-    "oversaturated, plastic look, bad anatomy, distorted hands"
+    "different necklace, altered chain, changed clasp, extra pearls, missing pendant, "
+    "duplicate product, watermark, text, logo, plastic, CGI, 3d render"
+)
+
+MODEL_NEGATIVE = (
+    "fabric swatch, textile flat lay, velvet cloth only, no human, no face, headless model, "
+    "jewelry on table, product on stand without person, mannequin without face, "
+    "hands only, abstract fashion, clothing rack, empty background, duplicate necklace, "
+    "wrong jewelry design, regenerated pendant"
 )
 
 
-def task_seed(task_id):
-    return abs(hash(str(task_id))) % 4294967294
+def task_seed(task_id, image_type, angle):
+    raw = f"{task_id}:{image_type}:{angle or 'none'}"
+    return abs(hash(raw)) % 4294967294
 
 
-def product_label(task_title, user_prompt):
-    bits = []
+def product_label(task_title, task_description, user_prompt):
+    parts = []
     if task_title:
-        bits.append(task_title.strip())
+        parts.append(task_title.strip())
+    if task_description:
+        parts.append(task_description.strip()[:200])
     if user_prompt:
-        bits.append(user_prompt.strip())
-    base = ", ".join(bits) if bits else "jewelry product"
-    return f"{base}, exact same product as reference photo, unchanged shape and details"
+        parts.append(user_prompt.strip())
+    label = ", ".join(parts) if parts else "fine jewelry necklace"
+    return (
+        f"{label}. CRITICAL: preserve the EXACT same jewelry from the reference — "
+        "identical chain links, clasp, pendant shape, pearl count, metal color and reflections. "
+        "Do not redesign or simplify the product."
+    )
 
 
-def build(image_type, angle, theme, user_prompt, task_title):
-    fg = product_label(task_title, user_prompt)
+def build(image_type, angle, theme, user_prompt, task_title, task_description=""):
+    fg = product_label(task_title, task_description, user_prompt)
     custom = (user_prompt or "").strip()
     theme_txt = (theme or "").strip()
 
     if image_type == "white_background":
-        bg = (
-            "pure solid white background hex FFFFFF, professional ecommerce studio, "
-            "soft diffused softbox lighting, clean product photography, DSLR, "
-            "no props, no shadows on backdrop"
-        )
-        if custom:
-            bg = f"{bg}, {custom}"
         return {
-            "background_prompt": bg,
+            "mode": "cutout_white",
             "foreground_prompt": fg,
-            "negative_prompt": NEGATIVE,
-            "preserve_original_subject": 0.92,
+            "negative_prompt": NEGATIVE_BASE,
         }
 
     if image_type == "theme":
-        scene = theme_txt or custom or "luxury marble surface with soft daylight"
+        scene = theme_txt or custom or "premium white marble countertop, luxury boutique"
         bg = (
-            f"photorealistic product photography, {scene}, "
-            "natural placement on surface, shallow depth of field, "
-            "professional commercial lighting, 85mm lens look"
+            f"Professional DSLR product photograph. Scene: {scene}. "
+            "The jewelry sits naturally on the surface. Soft commercial lighting, "
+            "realistic shadows, shallow depth of field, 85mm lens, high-end catalog."
         )
         return {
+            "mode": "relight",
             "background_prompt": bg,
             "foreground_prompt": fg,
-            "negative_prompt": NEGATIVE,
-            "preserve_original_subject": 0.9,
+            "negative_prompt": NEGATIVE_BASE,
+            "preserve_original_subject": 0.97,
+            "light_source_strength": 0.25,
         }
 
     if image_type == "creative":
-        scene = custom or theme_txt or "golden hour coastal lifestyle scene"
+        scene = custom or theme_txt or "golden hour coastal cliff, lifestyle magazine"
         bg = (
-            f"photorealistic artistic lifestyle photograph, {scene}, "
-            "cinematic natural light, not cartoon, magazine quality, DSLR"
+            f"Photorealistic artistic lifestyle photograph. Scene: {scene}. "
+            "Cinematic natural light, editorial quality, NOT cartoon, real environment."
         )
         return {
+            "mode": "relight",
             "background_prompt": bg,
             "foreground_prompt": fg,
-            "negative_prompt": NEGATIVE + ", cartoon, illustration",
-            "preserve_original_subject": 0.88,
+            "negative_prompt": NEGATIVE_BASE + ", cartoon, illustration",
+            "preserve_original_subject": 0.96,
+            "light_source_strength": 0.28,
         }
 
     if image_type == "model":
         angle_l = (angle or "front").lower()
         if "side" in angle_l:
-            view = "45 degree side profile portrait, neck and shoulders visible"
+            view = (
+                "45-degree side profile portrait of a real woman, full face partially visible, "
+                "elegant neck and shoulder, wearing the necklace"
+            )
         elif "close" in angle_l:
-            view = "tight close-up macro of neck and collarbone, shallow depth of field"
+            view = (
+                "tight beauty close-up of a real woman's neck, jawline and collarbone, "
+                "face edge visible, wearing the necklace, macro DSLR"
+            )
         else:
-            view = "front facing portrait, neck and collarbone visible"
+            view = (
+                "front-facing portrait of a real woman, clear visible face, eyes and smile, "
+                "neck and collarbones, wearing the necklace on her neck"
+            )
 
-        extra = custom or theme_txt or ""
+        extra = custom or theme_txt
         bg = (
-            f"photorealistic fashion model wearing the exact jewelry product, {view}, "
-            "natural skin tones, studio beauty lighting, professional fashion photography, "
-            "realistic human model, high detail"
+            f"High-end fashion photography. {view}. "
+            "Natural skin tones, professional studio beauty lighting, photorealistic, "
+            "vogue editorial, real human model, NOT fabric, NOT flat lay product shot."
         )
         if extra:
-            bg = f"{bg}, {extra}"
+            bg = f"{bg} {extra}"
 
-        preserve = 0.82 if "close" in angle_l else 0.78
         return {
+            "mode": "relight",
             "background_prompt": bg,
-            "foreground_prompt": fg,
-            "negative_prompt": NEGATIVE + ", mannequin, doll, fake skin",
-            "preserve_original_subject": preserve,
+            "foreground_prompt": (
+                f"{fg} The necklace is worn correctly on the model's neck, "
+                "same product as reference, not a different design."
+            ),
+            "negative_prompt": NEGATIVE_BASE + ", " + MODEL_NEGATIVE,
+            "preserve_original_subject": 0.91,
+            "light_source_strength": 0.22,
         }
 
     raise ValueError(f"unknown image_type: {image_type}")

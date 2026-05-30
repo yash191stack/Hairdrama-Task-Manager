@@ -27,6 +27,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
+  const [genElapsed, setGenElapsed] = useState(0)
 
   const [imageType, setImageType] = useState('white_background')
   const [angle, setAngle] = useState('none')
@@ -82,7 +83,8 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       })
 
       setActiveJobId(data.job_id)
-      toast.success('AI generation job initiated')
+      setGenElapsed(0)
+      toast.success('Generation started — usually 30–90 seconds')
     } catch (err: any) {
       const msg = err.response?.data?.detail || 'Failed to trigger AI generation'
       toast.error(msg)
@@ -92,7 +94,12 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
 
   const [latestImageUrl, setLatestImageUrl] = useState<string | null>(null);
 
-  // Poll job status every 2 seconds when a job is active
+  useEffect(() => {
+    if (!generating) return
+    const tick = setInterval(() => setGenElapsed((s) => s + 1), 1000)
+    return () => clearInterval(tick)
+  }, [generating])
+
   useEffect(() => {
     if (!activeJobId) return;
 
@@ -120,7 +127,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
         setActiveJobId(null);
         setGenerating(false);
       }
-    }, 2000);
+    }, 1500);
 
     return () => clearInterval(intervalId);
   }, [activeJobId, id]);
@@ -265,6 +272,12 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                     </div>
                   </div>
 
+                  {imageType === 'model' && (
+                    <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                      Model shots: pick an angle (front / side / close-up) and describe the model in the prompt.
+                    </p>
+                  )}
+
                   {imageType === 'theme' && (
                     <div>
                       <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Theme Name</label>
@@ -283,7 +296,11 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                     <textarea
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
-                      placeholder="Add rich contextual visual prompts..."
+                      placeholder={
+                        imageType === 'model'
+                          ? 'e.g. elegant woman, visible face, natural makeup, studio portrait'
+                          : 'Add rich contextual visual prompts...'
+                      }
                       rows={2.5}
                       className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-700 focus:outline-none focus:border-indigo-500 resize-none"
                     />
@@ -297,7 +314,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                     {generating ? (
                       <>
                         <Loader className="w-4 h-4 animate-spin text-white" />
-                        Generating with Stability AI...
+                        Generating… {genElapsed}s (Stability ~30–90s)
                       </>
                     ) : (
                       <>

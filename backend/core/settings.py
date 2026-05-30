@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from datetime import timedelta
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -57,16 +58,33 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
-DATABASES = {
-    'default': {
+def _database_config():
+    url = os.getenv('DATABASE_URL', '').strip()
+    if url:
+        p = urlparse(url)
+        return {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': (p.path or '/postgres').lstrip('/') or 'postgres',
+            'USER': p.username or 'postgres',
+            'PASSWORD': p.password or os.getenv('DB_PASSWORD', ''),
+            'HOST': p.hostname,
+            'PORT': str(p.port or 5432),
+            'CONN_MAX_AGE': 60,
+            'CONN_HEALTH_CHECKS': True,
+        }
+    return {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'postgres',
         'USER': 'postgres.xjkfghwrrjdslubetwfr',
         'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': 'aws-1-ap-south-1.pooler.supabase.com',
+        'HOST': os.getenv('DB_HOST', 'aws-1-ap-south-1.pooler.supabase.com'),
         'PORT': '5432',
+        'CONN_MAX_AGE': 60,
+        'CONN_HEALTH_CHECKS': True,
     }
-}
+
+
+DATABASES = {'default': _database_config()}
 
 AUTH_USER_MODEL = 'users.User'
 

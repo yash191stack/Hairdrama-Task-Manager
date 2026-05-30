@@ -1,15 +1,20 @@
 import os
 import logging
 import uuid
+import time
 import requests
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
-from PIL import Image
+from PIL import Image, ImageFilter
 from django.conf import settings
 
 from .models import GeneratedImage, Job
 from . import prompts
-from .stability_client import StabilityError, replace_background_and_relight
+from .stability_client import (
+    StabilityError,
+    remove_background,
+    replace_background_and_relight,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +41,51 @@ def _prepare_subject(image_bytes):
     img = Image.open(BytesIO(image_bytes))
     if img.mode not in ("RGB", "RGBA"):
         img = img.convert("RGB")
-    img.thumbnail((1536, 1536), Image.Resampling.LANCZOS)
+    img.thumbnail((1280, 1280), Image.Resampling.LANCZOS)
     buf = BytesIO()
-    img.convert("RGB").save(buf, format="JPEG", quality=95)
+    img.convert("RGB").save(buf, format="JPEG", quality=92)
+    return buf.getvalue()
+
+
+def _cache_dir():
+    media_root = getattr(settings, "MEDIA_ROOT", os.path.join(settings.BASE_DIR, "media"))
+    path = os.path.join(media_root, "cache")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _get_cutout(task_id, subject_jpeg):
+    path = os.path.join(_cache_dir(), f"{task_id}_cutout.png")
+    if os.path.isfile(path):
+        with open(path, "rb") as f:
+            return f.read()
+    cutout = remove_background(subject_jpeg, output_format="png")
+    with open(path, "wb") as f:
+        f.write(cutout)
+    return cutout
+
+
+def _white_catalog_jpeg(cutout_png):
+    cutout = Image.open(BytesIO(cutout_png)).convert("RGBA")
+    canvas = Image.new("RGB", OUTPUT_SIZE, (255, 255, 255))
+
+    max_w = int(OUTPUT_SIZE[0] * 0.72)
+    max_h = int(OUTPUT_SIZE[1] * 0.72)
+    cutout.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
+
+    shadow = Image.new("RGBA", cutout.size, (0, 0, 0, 0))
+    alpha = cutout.split()[3]
+    shadow.paste((0, 0, 0, 70), mask=alpha)
+    shadow = shadow.filter(ImageFilter.GaussianBlur(10))
+
+    x = (OUTPUT_SIZE[0] - cutout.width) // 2
+    y = (OUTPUT_SIZE[1] - cutout.height) // 2 + 20
+
+    canvas.paste(shadow, (x + 6, y + 10), shadow)
+    canvas.paste(cutout, (x, y), cutout)
+
+    buf = BytesIO()
+    canvas.save(buf, format="JPEG", quality=93)
     return buf.getvalue()
 
 
@@ -46,7 +93,8 @@ def _normalize_output(raw_bytes):
     img = Image.open(BytesIO(raw_bytes))
     if img.mode != "RGB":
         img = img.convert("RGB")
-    img = img.resize(OUTPUT_SIZE, Image.Resampling.LANCZOS)
+    if img.size != OUTPUT_SIZE:
+        img = img.resize(OUTPUT_SIZE, Image.Resampling.LANCZOS)
     buf = BytesIO()
     img.save(buf, format="JPEG", quality=92)
     return buf.getvalue()
@@ -54,8 +102,10 @@ def _normalize_output(raw_bytes):
 
 def _save_generation(task, jpeg_bytes, image_type, prompt, angle, theme, meta):
     filename = f"gen_{task.id}_{uuid.uuid4().hex[:8]}.jpg"
-    media_root = getattr(settings, "MEDIA_ROOT", os.path.join(settings.BASE_DIR, "media"))
-    gen_dir = os.path.join(media_root, "generations")
+    gen_dir = os.path.join(
+        getattr(settings, "MEDIA_ROOT", os.path.join(settings.BASE_DIR, "media")),
+        "generations",
+    )
     os.makedirs(gen_dir, exist_ok=True)
     filepath = os.path.join(gen_dir, filename)
     with open(filepath, "wb") as f:
@@ -84,6 +134,7 @@ def _run_generation(job_id, image_type, prompt, angle, theme):
     job.status = "running"
     job.save(update_fields=["status", "updated_at"])
 
+    t_start = time.time()
     try:
         task = job.task
         if not task.product_image_url:
@@ -91,21 +142,33 @@ def _run_generation(job_id, image_type, prompt, angle, theme):
 
         raw = _fetch_product_bytes(task.product_image_url)
         subject = _prepare_subject(raw)
-        seed = prompts.task_seed(task.id)
-        spec = prompts.build(image_type, angle, theme, prompt, task.title)
+        desc = task.description or ""
+        seed = prompts.task_seed(task.id, image_type, angle)
+        spec = prompts.build(image_type, angle, theme, prompt, task.title, desc)
 
-        result_bytes = replace_background_and_relight(
-            subject,
-            background_prompt=spec["background_prompt"],
-            foreground_prompt=spec["foreground_prompt"],
-            negative_prompt=spec["negative_prompt"],
-            preserve_original_subject=spec["preserve_original_subject"],
-            seed=seed,
-        )
-        result_bytes = _normalize_output(result_bytes)
-        endpoint = "edit/replace-background-and-relight"
-        credits = 8
+        t_api = time.time()
 
+        if spec.get("mode") == "cutout_white":
+            cutout = _get_cutout(str(task.id), subject)
+            result_bytes = _white_catalog_jpeg(cutout)
+            endpoint = "edit/remove-background + catalog white"
+            credits = 5
+        else:
+            result_bytes = replace_background_and_relight(
+                subject,
+                background_prompt=spec["background_prompt"],
+                foreground_prompt=spec["foreground_prompt"],
+                negative_prompt=spec["negative_prompt"],
+                preserve_original_subject=spec["preserve_original_subject"],
+                light_source_strength=spec.get("light_source_strength", 0.28),
+                seed=seed,
+            )
+            result_bytes = _normalize_output(result_bytes)
+            endpoint = "edit/replace-background-and-relight"
+            credits = 8
+
+        api_sec = round(time.time() - t_api, 1)
+        total_sec = round(time.time() - t_start, 1)
         meta = {
             "provider": "stability",
             "endpoint": endpoint,
@@ -115,7 +178,10 @@ def _run_generation(job_id, image_type, prompt, angle, theme):
             "background_prompt": spec.get("background_prompt", ""),
             "foreground_prompt": spec.get("foreground_prompt", ""),
             "preserve_original_subject": spec.get("preserve_original_subject"),
+            "duration_api_sec": api_sec,
+            "duration_total_sec": total_sec,
         }
+        logger.info("job %s finished in %ss (stability %ss)", job_id, total_sec, api_sec)
 
         saved_url = _save_generation(
             task, result_bytes, image_type, prompt, angle, theme, meta

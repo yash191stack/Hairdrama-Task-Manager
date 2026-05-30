@@ -22,24 +22,32 @@ export default function DashboardPage() {
   const [filterStatus, setFilterStatus] = useState<string>('all')
 
   const loadDashboardData = useCallback(async () => {
+    setLoading(true)
     try {
-      setLoading(true)
       const tasksData = await fetchTasks()
       setTasks(tasksData)
+    } catch {
+      toast.error('Failed to load tasks')
+      setLoading(false)
+      return
+    }
 
-      const user = getUser()
-      if (user?.role === 'admin') {
+    const user = getUser()
+    if (user?.role === 'admin') {
+      try {
         const usersData = await fetchUsers()
         setUsers(usersData)
-
+      } catch {
+        toast.error('Could not load users list')
+      }
+      try {
         const logsData = await fetchAuditLogs()
         setAuditLogs(logsData)
+      } catch {
+        toast.error('Could not load audit logs')
       }
-    } catch {
-      toast.error('Failed to load dashboard data')
-    } finally {
-      setLoading(false)
     }
+    setLoading(false)
   }, [])
 
   useEffect(() => {
