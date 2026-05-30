@@ -80,3 +80,17 @@ class AuditLog(models.Model):
     class Meta:
         db_table = 'audit_logs'
         ordering = ['-timestamp']
+
+class Job(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    task = models.ForeignKey(Task, on_delete=models.CASCADE)
+    image_type = models.CharField(max_length=50)
+    status = models.CharField(max_length=20, default='pending')
+    image_url = models.URLField(blank=True, null=True)
+    error = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'jobs'
+        ordering = ['-created_at']

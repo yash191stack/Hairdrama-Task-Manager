@@ -1,115 +1,248 @@
 import logging
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import UserRateThrottle
+from django.shortcuts import get_object_or_404
+from django.db.models import Q
 
-from .models import Task
-from .serializers import TaskSerializer
-from .email_service import send_task_created_email, send_task_completed_email
-
-from rest_framework.permissions import AllowAny, IsAuthenticated
-from django.conf import settings
-import os
+from core.permissions import IsAdmin
+from .models import Task, GeneratedImage, AuditLog, Job
+from .serializers import TaskSerializer, GeneratedImageSerializer, AuditLogSerializer
+from .email_service import send_task_assigned_email, send_task_submitted_email, send_task_accepted_email
+from .ai_service import trigger_bg_generation
 
 logger = logging.getLogger(__name__)
 
+class AIGeneratorThrottle(UserRateThrottle):
+    scope = 'ai_generate'
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def system_health_check(request):
-    """
-    Standard health check endpoint to verify backend status, database connectivity,
-    and confirm environment variable configuration (CORS-safe).
-    """
     db_status = "Healthy"
     try:
         from django.db import connection
         connection.ensure_connection()
     except Exception as e:
         db_status = f"Unhealthy: {str(e)}"
-
-    email_user = getattr(settings, 'EMAIL_HOST_USER', '')
-    email_password = getattr(settings, 'EMAIL_HOST_PASSWORD', '')
-
     return Response({
         "status": "online",
-        "database_connectivity": db_status,
-        "environment_variables": {
-            "EMAIL_HOST_USER_configured": bool(email_user),
-            "EMAIL_HOST_PASSWORD_configured": bool(email_password),
-        }
-    }, status=status.HTTP_200_OK)
+        "database_connectivity": db_status
+    })
 
-
+@api_view(['GET'])
+@permission_classes([IsAdmin])
+def list_audit_logs(request):
+    logs = AuditLog.objects.all()
+    serializer = AuditLogSerializer(logs, many=True)
+    return Response(serializer.data)
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def task_list_create(request):
-    """
-    List all tasks related to the authenticated user, or create a new task.
-    """
     if request.method == 'GET':
-        tasks = Task.objects.filter(
-            created_by=request.user
-        ) | Task.objects.filter(
-            assigned_to=request.user
-        )
-        tasks = tasks.distinct().order_by('-created_at')
+        if request.user.role == 'admin':
+            tasks = Task.objects.all()
+        else:
+            tasks = Task.objects.filter(assigned_to=request.user)
         serializer = TaskSerializer(tasks, many=True)
         return Response(serializer.data)
 
     elif request.method == 'POST':
+        if request.user.role != 'admin':
+            return Response({'error': 'Admin permission required'}, status=status.HTTP_403_FORBIDDEN)
+        
         serializer = TaskSerializer(data=request.data)
         if serializer.is_valid():
             task = serializer.save(created_by=request.user)
-            
-            # Send email notifications in the background to avoid blocking the request thread
-            try:
-                send_task_created_email(task)
-            except Exception as e:
-                logger.error(f"Failed to dispatch task creation email: {e}", exc_info=True)
-                
+            if task.assigned_to:
+                task.status = 'assigned'
+                task.save()
+                try:
+                    send_task_assigned_email(task)
+                except Exception as e:
+                    logger.error(e)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
-        
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_tasks(request):
+    tasks = Task.objects.filter(assigned_to=request.user)
+    serializer = TaskSerializer(tasks, many=True)
+    return Response(serializer.data)
 
-@api_view(['GET', 'PUT', 'DELETE'])
+@api_view(['GET', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def task_detail(request, pk):
-    """
-    Retrieve, update or delete a task instance.
-    """
-    try:
-        task = Task.objects.get(pk=pk)
-    except Task.DoesNotExist:
-        return Response({'error': 'Task not found'}, status=status.HTTP_404_NOT_FOUND)
+    task = get_object_or_404(Task, pk=pk)
 
-    # Permission Check: Only creator or assignee can interact with the task
-    if task.created_by != request.user and task.assigned_to != request.user:
+    if request.user.role != 'admin' and task.assigned_to != request.user:
         return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
     if request.method == 'GET':
         serializer = TaskSerializer(task)
         return Response(serializer.data)
 
-    elif request.method == 'PUT':
-        old_status = task.status
-        serializer = TaskSerializer(task, data=request.data, partial=True)
-        if serializer.is_valid():
-            updated_task = serializer.save()
-            
-            # Send completion notification if status transitions to completed
-            if old_status != 'completed' and updated_task.status == 'completed':
-                try:
-                    send_task_completed_email(updated_task)
-                except Exception as e:
-                    logger.error(f"Failed to dispatch task completion email: {e}", exc_info=True)
-                    
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
     elif request.method == 'DELETE':
+        if request.user.role != 'admin':
+            return Response({'error': 'Admin permission required'}, status=status.HTTP_403_FORBIDDEN)
         task.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+@api_view(['POST'])
+@permission_classes([IsAdmin])
+def assign_task(request, pk):
+    task = get_object_or_404(Task, pk=pk)
+    assigned_to_id = request.data.get('assigned_to_id')
+    
+    if not assigned_to_id:
+        return Response({'error': 'assigned_to_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+    task.assigned_to_id = assigned_to_id
+    task.status = 'assigned'
+    task.save()
+    
+    try:
+        send_task_assigned_email(task)
+    except Exception as e:
+        logger.error(e)
+        
+    serializer = TaskSerializer(task)
+    return Response(serializer.data)
+
+@api_view(['PUT'])
+@permission_classes([IsAdmin])
+def accept_task(request, pk):
+    task = get_object_or_404(Task, pk=pk)
+    task.status = 'accepted'
+    task.save()
+    
+    try:
+        send_task_accepted_email(task, accepted=True)
+    except Exception as e:
+        logger.error(e)
+        
+    serializer = TaskSerializer(task)
+    return Response(serializer.data)
+
+@api_view(['PUT'])
+@permission_classes([IsAdmin])
+def request_revision(request, pk):
+    task = get_object_or_404(Task, pk=pk)
+    feedback = request.data.get('feedback', '')
+    
+    task.status = 'revision_requested'
+    if feedback and task.description:
+        task.description = f"{task.description}\n\nRevision Feedback: {feedback}"
+    elif feedback:
+        task.description = f"Revision Feedback: {feedback}"
+    task.save()
+    
+    try:
+        send_task_accepted_email(task, accepted=False, feedback=feedback)
+    except Exception as e:
+        logger.error(e)
+        
+    serializer = TaskSerializer(task)
+    return Response(serializer.data)
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def start_task(request, pk):
+    task = get_object_or_404(Task, pk=pk)
+    if task.assigned_to != request.user:
+        return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        
+    task.status = 'in_progress'
+    task.save()
+    
+    serializer = TaskSerializer(task)
+    return Response(serializer.data)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def submit_task(request, pk):
+    task = get_object_or_404(Task, pk=pk)
+    if task.assigned_to != request.user:
+        return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        
+    if task.generations.count() < 8:
+        return Response({'error': 'Must generate exactly 8 variations before submitting.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+    task.status = 'submitted'
+    task.save()
+    
+    try:
+        send_task_submitted_email(task)
+    except Exception as e:
+        logger.error(e)
+        
+    serializer = TaskSerializer(task)
+    return Response(serializer.data)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AIGeneratorThrottle])
+def trigger_generation(request, pk):
+    task = get_object_or_404(Task, pk=pk)
+    if task.assigned_to != request.user:
+        return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
+    image_type = request.data.get('image_type')
+    prompt = request.data.get('prompt', '')
+    angle = request.data.get('angle', 'none')
+    theme = request.data.get('theme', '')
+
+    if not image_type or image_type not in ['white_background', 'theme', 'creative', 'model']:
+        return Response({'error': 'Invalid image_type'}, status=status.HTTP_400_BAD_REQUEST)
+
+    job = Job.objects.create(
+        task=task,
+        image_type=image_type,
+        status='pending'
+    )
+
+    trigger_bg_generation(
+        job_id=job.id,
+        image_type=image_type,
+        prompt=prompt,
+        angle=angle,
+        theme=theme
+    )
+
+    return Response({'job_id': str(job.id), 'status': job.status}, status=status.HTTP_202_ACCEPTED)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def poll_job_status(request, job_id):
+    job = get_object_or_404(Job, pk=job_id)
+    return Response({
+        'job_id': str(job.id),
+        'status': job.status,
+        'image_url': job.image_url,
+        'error': job.error
+    })
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_generations(request, pk):
+    task = get_object_or_404(Task, pk=pk)
+    if request.user.role != 'admin' and task.assigned_to != request.user:
+        return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        
+    generations = task.generations.all()
+    serializer = GeneratedImageSerializer(generations, many=True)
+    return Response(serializer.data)
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_generation(request, pk):
+    gen = get_object_or_404(GeneratedImage, pk=pk)
+    if request.user.role != 'admin' and gen.task.assigned_to != request.user:
+        return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        
+    gen.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
