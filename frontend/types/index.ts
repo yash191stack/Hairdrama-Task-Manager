@@ -3,19 +3,30 @@ export interface User {
   email: string
   name: string
   avatar?: string
+  role?: 'admin' | 'user'
   created_at: string
 }
 
+export interface GeneratedImage {
+  id: string
+  task: string
+  image_type: 'white_background' | 'theme' | 'creative' | 'model'
+  image_url: string
+  prompt_used?: string
+  metadata?: Record<string, any>
+  angle?: 'front' | 'side' | 'close_up' | 'none'
+  created_at: string
+}
 
 export interface Task {
   id: string
   title: string
   description?: string
-  status: 'pending' | 'in_progress' | 'completed'
-  priority: 'low' | 'medium' | 'high'
+  status: 'pending' | 'assigned' | 'in_progress' | 'submitted' | 'accepted' | 'revision_requested'
+  product_image_url?: string
   created_by: User
   assigned_to?: User
-  due_date?: string
+  generations?: GeneratedImage[]
   created_at: string
   updated_at: string
 }
@@ -31,7 +42,16 @@ export interface AuthResponse {
 export interface TaskFormData {
   title: string
   description?: string
-  priority: 'low' | 'medium' | 'high'
+  product_image_url?: string
   assigned_to_id?: string
-  due_date?: string
+}
+
+export interface AuditLog {
+  id: string
+  user?: User
+  action: string
+  table_name: string
+  row_id: string
+  changes?: Record<string, any>
+  timestamp: string
 }
