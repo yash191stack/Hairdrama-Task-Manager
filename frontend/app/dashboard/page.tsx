@@ -3,27 +3,40 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { getUser, logout, isAuthenticated } from '@/lib/auth'
-import { User, Task } from '@/types'
-import { fetchTasks } from '@/lib/tasks'
+import { User, Task, AuditLog } from '@/types'
+import { fetchTasks, fetchUsers, fetchAuditLogs } from '@/lib/tasks'
 import toast from 'react-hot-toast'
-import { LogOut, Plus, CheckCircle, Clock, AlertCircle } from 'lucide-react'
+import { LogOut, Plus, RefreshCw, BarChart2, ShieldAlert } from 'lucide-react'
 import TaskCard from '@/components/tasks/TaskCard'
 import CreateTaskModal from '@/components/tasks/CreateTaskModal'
 
 export default function DashboardPage() {
   const router = useRouter()
-  const [user, setUser] = useState<User | null>(null)
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
+  const [users, setUsers] = useState<User[]>([])
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showLogs, setShowLogs] = useState(false)
+  const [filterStatus, setFilterStatus] = useState<string>('all')
 
-  const loadTasks = useCallback(async () => {
+  const loadDashboardData = useCallback(async () => {
     try {
       setLoading(true)
-      const data = await fetchTasks()
-      setTasks(data)
+      const tasksData = await fetchTasks()
+      setTasks(tasksData)
+
+      const user = getUser()
+      if (user?.role === 'admin') {
+        const usersData = await fetchUsers()
+        setUsers(usersData)
+
+        const logsData = await fetchAuditLogs()
+        setAuditLogs(logsData)
+      }
     } catch {
-      toast.error('Failed to load tasks')
+      toast.error('Failed to load dashboard data')
     } finally {
       setLoading(false)
     }
@@ -34,126 +47,216 @@ export default function DashboardPage() {
       router.push('/login')
       return
     }
-    const currentUser = getUser()
-    setUser(currentUser)
-    loadTasks()
-  }, [router, loadTasks])
+    const user = getUser()
+    setCurrentUser(user)
+    loadDashboardData()
+  }, [router, loadDashboardData])
 
-  const pendingTasks = tasks.filter(t => t.status === 'pending').length
-  const inProgressTasks = tasks.filter(t => t.status === 'in_progress').length
-  const completedTasks = tasks.filter(t => t.status === 'completed').length
-  const createdByMe = tasks.filter(t => t.created_by.id === user?.id)
-  const assignedToMe = tasks.filter(t => t.assigned_to?.id === user?.id)
+  const pending = tasks.filter(t => t.status === 'pending').length
+  const assigned = tasks.filter(t => t.status === 'assigned').length
+  const inProgress = tasks.filter(t => t.status === 'in_progress').length
+  const submitted = tasks.filter(t => t.status === 'submitted').length
+  const accepted = tasks.filter(t => t.status === 'accepted').length
+  const revisions = tasks.filter(t => t.status === 'revision_requested').length
+
+  const filteredTasks = tasks.filter(t => {
+    if (filterStatus === 'all') return true
+    return t.status === filterStatus
+  })
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b border-gray-200 px-6 py-4">
+    <div className="min-h-screen bg-gray-50 text-gray-900">
+      
+      <nav className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-30">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center">
-              <span className="text-white text-sm font-bold">H</span>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center">
+              <span className="text-white font-bold">H</span>
             </div>
-            <span className="font-semibold text-gray-900">Hairdrama Tasks</span>
+            <span className="font-bold text-gray-900 text-lg">Hairdrama Hub</span>
           </div>
+
           <div className="flex items-center gap-4">
-            {user?.avatar && (
-              <img src={user.avatar} alt={user.name} className="w-8 h-8 rounded-full" />
-            )}
-            <span className="text-sm text-gray-600">{user?.name}</span>
+            <div className="flex items-center gap-2">
+              {currentUser?.avatar ? (
+                <img src={currentUser.avatar} alt={currentUser.name} className="w-8 h-8 rounded-full border border-gray-200" />
+              ) : (
+                <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center border border-gray-300">
+                  <span className="text-xs font-bold text-gray-600">{currentUser?.name?.[0]}</span>
+                </div>
+              )}
+              <div className="hidden sm:block text-left">
+                <p className="text-xs font-bold text-gray-900 leading-none">{currentUser?.name}</p>
+                <p className="text-[10px] text-gray-500 capitalize mt-0.5 leading-none font-semibold">{currentUser?.role}</p>
+              </div>
+            </div>
+
             <button
               onClick={logout}
-              className="flex items-center gap-1 text-sm text-gray-500 hover:text-red-500 transition-colors"
+              className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 transition-colors bg-white hover:bg-gray-50 border border-gray-300 px-3 py-1.5 rounded cursor-pointer font-medium shadow-sm"
             >
-              <LogOut size={16} />
-              Logout
+              <LogOut size={13} />
+              Sign Out
             </button>
           </div>
         </div>
       </nav>
 
       <div className="max-w-6xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-3 gap-4 mb-8">
-          <div className="bg-white rounded-xl p-5 border border-gray-200">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
-                <Clock size={20} className="text-yellow-600" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Pending</p>
-                <p className="text-2xl font-bold text-gray-900">{pendingTasks}</p>
-              </div>
-            </div>
+        
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-8">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">Task Overview</h1>
+            <p className="text-gray-500 text-xs mt-1">Real-time task counters and records</p>
           </div>
-          <div className="bg-white rounded-xl p-5 border border-gray-200">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                <AlertCircle size={20} className="text-blue-600" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">In Progress</p>
-                <p className="text-2xl font-bold text-gray-900">{inProgressTasks}</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl p-5 border border-gray-200">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                <CheckCircle size={20} className="text-green-600" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Completed</p>
-                <p className="text-2xl font-bold text-gray-900">{completedTasks}</p>
-              </div>
-            </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={loadDashboardData}
+              className="p-2 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors text-gray-500 cursor-pointer"
+            >
+              <RefreshCw size={15} />
+            </button>
+
+            {currentUser?.role === 'admin' && (
+              <>
+                <button
+                  onClick={() => setShowLogs(!showLogs)}
+                  className={`flex items-center gap-1 border px-4 py-2 rounded text-xs font-bold transition-all cursor-pointer ${
+                    showLogs
+                      ? 'bg-indigo-50 text-indigo-700 border-indigo-300'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <ShieldAlert size={14} />
+                  {showLogs ? 'Show Tasks' : 'Audit Logs'}
+                </button>
+
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded text-xs font-bold transition-all cursor-pointer shadow-sm"
+                >
+                  <Plus size={14} />
+                  New Task
+                </button>
+              </>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-gray-900">My Tasks</h2>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
-          >
-            <Plus size={16} />
-            New Task
-          </button>
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-8">
+          {[
+            { label: 'Unassigned', count: pending, color: 'text-gray-700', bg: 'bg-white' },
+            { label: 'Assigned', count: assigned, color: 'text-blue-700', bg: 'bg-white' },
+            { label: 'In Progress', count: inProgress, color: 'text-sky-700', bg: 'bg-white' },
+            { label: 'Submitted', count: submitted, color: 'text-yellow-700', bg: 'bg-white' },
+            { label: 'Accepted', count: accepted, color: 'text-green-700', bg: 'bg-white' },
+            { label: 'Revisions', count: revisions, color: 'text-red-700', bg: 'bg-white' },
+          ].map((stat, i) => (
+            <div key={i} className={`rounded-lg p-4 border border-gray-200 bg-white ${stat.bg}`}>
+              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{stat.label}</p>
+              <p className={`text-2xl font-black mt-1 ${stat.color}`}>{stat.count}</p>
+            </div>
+          ))}
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
+          <div className="flex flex-col items-center justify-center py-24 gap-2">
+            <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-gray-500 text-xs font-semibold">Synchronizing...</span>
           </div>
-        ) : (
-          <div className="space-y-8">
-            <div>
-              <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">
-                Created by me ({createdByMe.length})
-              </h3>
-              {createdByMe.length === 0 ? (
-                <p className="text-gray-300 text-sm py-4">No tasks created yet</p>
-              ) : (
-                <div className="grid gap-3">
-                  {createdByMe.map(task => (
-                    <TaskCard key={task.id} task={task} onUpdate={loadTasks} />
-                  ))}
-                </div>
-              )}
+        ) : showLogs ? (
+          <div className="bg-white border border-gray-200 rounded-lg p-5">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-200">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Audit Log Trace</h3>
+                <p className="text-[10px] text-gray-500 mt-0.5">Automated signal records of write actions</p>
+              </div>
             </div>
 
-            <div>
-              <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">
-                Assigned to me ({assignedToMe.length})
-              </h3>
-              {assignedToMe.length === 0 ? (
-                <p className="text-gray-300 text-sm py-4">No tasks assigned yet</p>
-              ) : (
-                <div className="grid gap-3">
-                  {assignedToMe.map(task => (
-                    <TaskCard key={task.id} task={task} onUpdate={loadTasks} />
-                  ))}
-                </div>
-              )}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-gray-200 text-gray-500 font-bold uppercase tracking-wider">
+                    <th className="py-2.5">Timestamp</th>
+                    <th>User</th>
+                    <th>Action</th>
+                    <th>Table</th>
+                    <th>Record ID</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-150 text-gray-600 font-medium">
+                  {auditLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="text-center py-6 text-gray-400">No actions recorded in logs yet</td>
+                    </tr>
+                  ) : (
+                    auditLogs.map((log) => (
+                      <tr key={log.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="py-2.5 text-gray-500">{new Date(log.timestamp).toLocaleString()}</td>
+                        <td className="text-gray-900 font-semibold">{log.user?.name || 'System / Signal'}</td>
+                        <td>
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            log.action === 'CREATE' ? 'bg-green-50 text-green-700 border border-green-200' :
+                            log.action === 'UPDATE' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                            'bg-red-50 text-red-700 border border-red-200'
+                          }`}>
+                            {log.action}
+                          </span>
+                        </td>
+                        <td className="font-mono text-[11px]">{log.table_name}</td>
+                        <td className="font-mono text-[10px] text-gray-500">{log.row_id}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-4">
+              <div className="flex items-center gap-2">
+                <BarChart2 size={16} className="text-indigo-600" />
+                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Tasks</h3>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Filter:</span>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="bg-white border border-gray-300 rounded px-2.5 py-1 text-xs text-gray-700 focus:outline-none"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="pending">Unassigned</option>
+                  <option value="assigned">Assigned</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="submitted">Submitted</option>
+                  <option value="accepted">Accepted</option>
+                  <option value="revision_requested">Revision Requested</option>
+                </select>
+              </div>
+            </div>
+
+            {filteredTasks.length === 0 ? (
+              <div className="text-center py-20 bg-white rounded-lg border border-gray-200">
+                <p className="text-gray-400 text-sm font-medium">No tasks found matching status criterion</p>
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {filteredTasks.map(task => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    currentUser={currentUser}
+                    allUsers={users}
+                    onUpdate={loadDashboardData}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -163,7 +266,7 @@ export default function DashboardPage() {
           onClose={() => setShowCreateModal(false)}
           onSuccess={() => {
             setShowCreateModal(false)
-            loadTasks()
+            loadDashboardData()
           }}
         />
       )}

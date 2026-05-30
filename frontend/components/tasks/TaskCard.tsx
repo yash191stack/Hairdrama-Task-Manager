@@ -1,118 +1,220 @@
 'use client'
 
 import { useState } from 'react'
-import { Task } from '@/types'
-import { updateTask, deleteTask } from '@/lib/tasks'
+import Link from 'next/link'
+import { Task, User } from '@/types'
+import { deleteTask, assignTask, acceptTask, requestRevision } from '@/lib/tasks'
 import toast from 'react-hot-toast'
-import { Trash2, User, Calendar, Flag } from 'lucide-react'
+import { Trash2, User as UserIcon, ArrowUpRight, Sparkles } from 'lucide-react'
 
 interface TaskCardProps {
   task: Task
+  currentUser: User | null
+  allUsers: User[]
   onUpdate: () => void
 }
 
-const priorityColors = {
-  low: 'bg-green-100 text-green-700',
-  medium: 'bg-yellow-100 text-yellow-700',
-  high: 'bg-red-100 text-red-700',
-}
-
 const statusColors = {
-  pending: 'bg-gray-100 text-gray-700',
-  in_progress: 'bg-blue-100 text-blue-700',
-  completed: 'bg-green-100 text-green-700',
+  pending: 'bg-gray-100 text-gray-700 border-gray-200',
+  assigned: 'bg-blue-50 text-blue-700 border-blue-200',
+  in_progress: 'bg-sky-50 text-sky-700 border-sky-200',
+  submitted: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+  accepted: 'bg-green-50 text-green-700 border-green-200',
+  revision_requested: 'bg-red-50 text-red-700 border-red-200',
 }
 
 const statusLabels = {
-  pending: 'Pending',
+  pending: 'Unassigned',
+  assigned: 'Assigned',
   in_progress: 'In Progress',
-  completed: 'Completed',
+  submitted: 'Submitted',
+  accepted: 'Accepted',
+  revision_requested: 'Revision Requested',
 }
 
-export default function TaskCard({ task, onUpdate }: TaskCardProps) {
-  const [updating, setUpdating] = useState(false)
+export default function TaskCard({ task, currentUser, allUsers, onUpdate }: TaskCardProps) {
+  const [loading, setLoading] = useState(false)
+  const [showRevisionInput, setShowRevisionInput] = useState(false)
+  const [feedback, setFeedback] = useState('')
 
-  const handleStatusChange = async (newStatus: string) => {
-    try {
-      setUpdating(true)
-      await updateTask(task.id, { status: newStatus })
-      toast.success('Task updated!')
-      onUpdate()
-    } catch {
-      toast.error('Failed to update task')
-    } finally {
-      setUpdating(false)
-    }
-  }
+  const isAdmin = currentUser?.role === 'admin'
+  const isAssignedToMe = task.assigned_to?.id === currentUser?.id
 
   const handleDelete = async () => {
-    if (!confirm('Delete this task?')) return
+    if (!confirm('Are you sure you want to delete this task?')) return
     try {
+      setLoading(true)
       await deleteTask(task.id)
       toast.success('Task deleted')
       onUpdate()
     } catch {
       toast.error('Failed to delete task')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleAssignChange = async (userId: string) => {
+    try {
+      setLoading(true)
+      await assignTask(task.id, userId)
+      toast.success('Task assignment updated')
+      onUpdate()
+    } catch {
+      toast.error('Failed to assign task')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleAccept = async () => {
+    try {
+      setLoading(true)
+      await acceptTask(task.id)
+      toast.success('Task accepted and completed!')
+      onUpdate()
+    } catch {
+      toast.error('Failed to accept task')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleRequestRevision = async () => {
+    if (!feedback.trim()) {
+      toast.error('Feedback is required to request a revision')
+      return
+    }
+    try {
+      setLoading(true)
+      await requestRevision(task.id, feedback)
+      toast.success('Revision requested')
+      setShowRevisionInput(false)
+      setFeedback('')
+      onUpdate()
+    } catch {
+      toast.error('Failed to request revision')
+    } finally {
+      setLoading(false)
     }
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between gap-4">
-
-        {/* Left side */}
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-2">
-            <span className={`text-xs px-2 py-1 rounded-full font-medium ${priorityColors[task.priority]}`}>
-              <Flag size={10} className="inline mr-1" />
-              {task.priority}
-            </span>
-            <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColors[task.status]}`}>
+    <div className="bg-white border border-gray-200 rounded-lg p-5 hover:shadow-sm transition-shadow">
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+        
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded border ${statusColors[task.status]}`}>
               {statusLabels[task.status]}
             </span>
+            
+            {task.product_image_url && (
+              <span className="text-[10px] bg-gray-50 text-gray-600 border border-gray-200 px-1.5 py-0.5 rounded flex items-center gap-1">
+                <Sparkles size={10} /> Has Product Image
+              </span>
+            )}
           </div>
 
-          <h3 className="font-semibold text-gray-900 mb-1">{task.title}</h3>
+          <h3 className="text-base font-bold text-gray-900 mb-1">
+            {task.title}
+          </h3>
 
           {task.description && (
-            <p className="text-sm text-gray-500 mb-3">{task.description}</p>
+            <p className="text-gray-600 text-sm mb-4 line-clamp-2 leading-relaxed">
+              {task.description}
+            </p>
           )}
 
-          <div className="flex items-center gap-4 text-xs text-gray-400">
-            {task.assigned_to && (
-              <span className="flex items-center gap-1">
-                <User size={12} />
-                {task.assigned_to.name}
-              </span>
-            )}
-            {task.due_date && (
-              <span className="flex items-center gap-1">
-                <Calendar size={12} />
-                {new Date(task.due_date).toLocaleDateString()}
-              </span>
-            )}
+          <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 border-t border-gray-100 pt-3">
+            <div>
+              <span className="font-semibold text-gray-700">Created by: </span>
+              <span className="text-gray-600">{task.created_by.name}</span>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <span className="font-semibold text-gray-700">Assignee: </span>
+              {isAdmin ? (
+                <select
+                  disabled={loading}
+                  value={task.assigned_to?.id || ''}
+                  onChange={(e) => handleAssignChange(e.target.value)}
+                  className="bg-white border border-gray-300 rounded px-1.5 py-0.5 text-xs text-gray-700 focus:outline-none"
+                >
+                  <option value="">Unassigned</option>
+                  {allUsers.map(u => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-gray-600">{task.assigned_to?.name || 'Unassigned'}</span>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Right side — actions */}
-        <div className="flex items-center gap-2">
-          <select
-            value={task.status}
-            onChange={(e) => handleStatusChange(e.target.value)}
-            disabled={updating}
-            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600 focus:outline-none focus:ring-2 focus:ring-purple-300"
-          >
-            <option value="pending">Pending</option>
-            <option value="in_progress">In Progress</option>
-            <option value="completed">Completed</option>
-          </select>
+        <div className="flex flex-row md:flex-col items-center md:items-end justify-between md:justify-start gap-3 border-t md:border-t-0 border-gray-100 pt-3 md:pt-0">
+          <div className="flex items-center gap-2">
+            {(isAssignedToMe || isAdmin) && (
+              <Link
+                href={`/tasks/${task.id}`}
+                className="flex items-center gap-1 bg-white hover:bg-gray-50 border border-gray-300 text-gray-750 px-3 py-1.5 rounded text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+              >
+                AI Studio
+                <ArrowUpRight size={13} />
+              </Link>
+            )}
 
-          <button
-            onClick={handleDelete}
-            className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
-          >
-            <Trash2 size={16} />
-          </button>
+            {isAdmin && (
+              <button
+                disabled={loading}
+                onClick={handleDelete}
+                className="p-1.5 bg-white hover:bg-gray-50 border border-gray-300 text-gray-500 hover:text-red-600 rounded shadow-sm transition-colors cursor-pointer"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+
+          {isAdmin && task.status === 'submitted' && (
+            <div className="flex flex-col gap-2 w-full md:w-auto">
+              <div className="flex items-center gap-2">
+                <button
+                  disabled={loading}
+                  onClick={handleAccept}
+                  className="bg-green-600 hover:bg-green-700 text-white font-semibold text-xs px-2.5 py-1 rounded cursor-pointer transition-colors shadow-sm"
+                >
+                  Accept Task
+                </button>
+                <button
+                  disabled={loading}
+                  onClick={() => setShowRevisionInput(!showRevisionInput)}
+                  className="bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 font-semibold text-xs px-2.5 py-1 rounded cursor-pointer transition-colors shadow-sm"
+                >
+                  Revision
+                </button>
+              </div>
+
+              {showRevisionInput && (
+                <div className="mt-2 flex flex-col gap-1.5 w-60">
+                  <textarea
+                    placeholder="Enter revision instructions..."
+                    value={feedback}
+                    onChange={(e) => setFeedback(e.target.value)}
+                    rows={2}
+                    className="w-full bg-white border border-gray-300 rounded p-1.5 text-xs text-gray-900 focus:outline-none focus:border-indigo-500 resize-none"
+                  />
+                  <button
+                    disabled={loading}
+                    onClick={handleRequestRevision}
+                    className="self-end bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-[10px] px-2 py-0.5 rounded cursor-pointer transition-colors"
+                  >
+                    Submit
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
