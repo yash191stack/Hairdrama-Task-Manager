@@ -13,6 +13,22 @@ def generate_tokens(user):
         'refresh': str(refresh),
     }
 
+def _oauth_login_response(provider, profile_data):
+    if not profile_data:
+        if provider == 'google':
+            hint = 'Check GOOGLE_CLIENT_ID matches Vercel NEXT_PUBLIC_GOOGLE_CLIENT_ID and Google Console origins.'
+            return Response(
+                {'error': 'Google authentication failed', 'detail': hint},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        return Response({'error': 'Authentication failed'}, status=status.HTTP_401_UNAUTHORIZED)
+
+    user = get_or_create_oauth_user(provider, profile_data)
+    tokens = generate_tokens(user)
+    serializer = UserSerializer(user)
+    return Response({'user': serializer.data, 'tokens': tokens}, status=status.HTTP_200_OK)
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def oauth_callback(request):
@@ -35,17 +51,22 @@ def oauth_callback(request):
             return Response({'error': 'Code required'}, status=status.HTTP_400_BAD_REQUEST)
         profile_data = verify_github_code(auth_code)
 
-    if not profile_data:
-        return Response({'error': 'Authentication failed'}, status=status.HTTP_401_UNAUTHORIZED)
+    return _oauth_login_response(provider, profile_data)
 
-    user = get_or_create_oauth_user(provider, profile_data)
-    tokens = generate_tokens(user)
-    serializer = UserSerializer(user)
 
-    return Response({
-        'user': serializer.data,
-        'tokens': tokens,
-    }, status=status.HTTP_200_OK)
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def google_login_legacy(request):
+    """Older frontend builds POST /api/users/auth/google/"""
+    token = (
+        request.data.get('credential')
+        or request.data.get('id_token')
+        or request.data.get('access_token')
+    )
+    if not token:
+        return Response({'error': 'Token required'}, status=status.HTTP_400_BAD_REQUEST)
+    profile_data = verify_google_token(token)
+    return _oauth_login_response('google', profile_data)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
