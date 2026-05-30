@@ -17,19 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 def _can_access_task(user, task):
-    if user.role == 'admin':
-        return True
-    if task.assigned_to_id == user.id:
-        return True
-    if task.created_by_id == user.id:
-        return True
-    return False
+    return user.is_authenticated
 
 
 def _can_work_on_task(user, task):
-    if user.role == 'admin':
-        return True
-    return task.assigned_to_id == user.id
+    return user.is_authenticated
 
 
 class AIGeneratorThrottle(UserRateThrottle):
@@ -71,10 +63,7 @@ def list_audit_logs(request):
 @permission_classes([IsAuthenticated])
 def task_list_create(request):
     if request.method == 'GET':
-        if request.user.role == 'admin':
-            tasks = Task.objects.all()
-        else:
-            tasks = Task.objects.filter(assigned_to=request.user)
+        tasks = Task.objects.all()
         serializer = TaskSerializer(tasks, many=True, context={'request': request})
         return Response(serializer.data)
 

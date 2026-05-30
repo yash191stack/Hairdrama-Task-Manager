@@ -5,6 +5,10 @@ import Link from 'next/link'
 import { Task, User } from '@/types'
 import { deleteTask, assignTask, acceptTask, requestRevision } from '@/lib/tasks'
 import { sameUserId } from '@/lib/auth'
+
+function studioHref(taskId: string) {
+  return `/dashboard?task=${taskId}`
+}
 import toast from 'react-hot-toast'
 import { Trash2, User as UserIcon, ArrowUpRight, Sparkles } from 'lucide-react'
 
@@ -40,7 +44,6 @@ export default function TaskCard({ task, currentUser, allUsers, onUpdate }: Task
 
   const isAdmin = currentUser?.role === 'admin'
   const isAssignedToMe = sameUserId(task.assigned_to?.id, currentUser?.id)
-  const canOpen = isAdmin || isAssignedToMe || currentUser?.role === 'user'
 
   const handleDelete = async () => {
     if (!confirm('Are you sure you want to delete this task?')) return
@@ -118,13 +121,9 @@ export default function TaskCard({ task, currentUser, allUsers, onUpdate }: Task
             )}
           </div>
 
-          {canOpen ? (
-            <Link href={`/tasks/${task.id}`} className="text-base font-bold text-gray-900 mb-1 hover:text-indigo-600 block">
-              {task.title}
-            </Link>
-          ) : (
-            <h3 className="text-base font-bold text-gray-900 mb-1">{task.title}</h3>
-          )}
+          <Link href={studioHref(task.id)} className="text-base font-bold text-gray-900 mb-1 hover:text-indigo-600 block">
+            {task.title}
+          </Link>
 
           {task.description && (
             <p className="text-gray-600 text-sm mb-4 line-clamp-2 leading-relaxed">
@@ -161,19 +160,13 @@ export default function TaskCard({ task, currentUser, allUsers, onUpdate }: Task
 
         <div className="flex flex-row md:flex-col items-center md:items-end justify-between md:justify-start gap-3 border-t md:border-t-0 border-gray-100 pt-3 md:pt-0">
           <div className="flex items-center gap-2">
-            {canOpen ? (
-              <Link
-                href={`/tasks/${task.id}`}
-                className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 border border-indigo-600 text-white px-3 py-1.5 rounded text-xs font-semibold shadow-sm transition-colors cursor-pointer"
-              >
-                Open AI Studio
-                <ArrowUpRight size={13} />
-              </Link>
-            ) : (
-              <span className="text-[10px] text-gray-400 border border-gray-200 px-2 py-1 rounded">
-                Not assigned to you
-              </span>
-            )}
+            <Link
+              href={studioHref(task.id)}
+              className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 border border-indigo-600 text-white px-3 py-1.5 rounded text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+            >
+              Open AI Studio
+              <ArrowUpRight size={13} />
+            </Link>
 
             {isAdmin && (
               <button

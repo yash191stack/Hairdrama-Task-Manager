@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState, useCallback, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { getUser, logout, isAuthenticated, refreshCurrentUser } from '@/lib/auth'
 import { User, Task, AuditLog } from '@/types'
 import { fetchTasks, fetchUsers, fetchAuditLogs } from '@/lib/tasks'
@@ -9,9 +9,12 @@ import toast from 'react-hot-toast'
 import { LogOut, Plus, RefreshCw, BarChart2, ShieldAlert } from 'lucide-react'
 import TaskCard from '@/components/tasks/TaskCard'
 import CreateTaskModal from '@/components/tasks/CreateTaskModal'
+import TaskStudio from '@/components/tasks/TaskStudio'
 
-export default function DashboardPage() {
+function DashboardContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const studioTaskId = searchParams.get('task')
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [users, setUsers] = useState<User[]>([])
@@ -72,6 +75,15 @@ export default function DashboardPage() {
     if (filterStatus === 'all') return true
     return t.status === filterStatus
   })
+
+  if (studioTaskId) {
+    return (
+      <TaskStudio
+        taskId={studioTaskId}
+        onBack={() => router.push('/dashboard')}
+      />
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
@@ -280,5 +292,20 @@ export default function DashboardPage() {
         />
       )}
     </div>
+  )
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-2">
+          <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+          <span className="text-gray-500 text-xs font-semibold">Loading...</span>
+        </div>
+      }
+    >
+      <DashboardContent />
+    </Suspense>
   )
 }
