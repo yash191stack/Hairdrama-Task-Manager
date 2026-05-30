@@ -10,6 +10,16 @@ from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from .models import Task, GeneratedImage, Job
 
+def extract_product_with_floodfill(img):
+    img = img.convert("RGBA")
+    w, h = img.size
+    corners = [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]
+    for cx, cy in corners:
+        pixel = img.getpixel((cx, cy))
+        if pixel[3] > 0:
+            ImageDraw.floodfill(img, (cx, cy), (0, 0, 0, 0), thresh=30)
+    return img
+
 executor = ThreadPoolExecutor(max_workers=3)
 
 def trigger_bg_generation(job_id, image_type, prompt='', angle='none', theme=''):
@@ -26,16 +36,16 @@ def _process_bg_generation(job_id, image_type, prompt, angle, theme):
 
     try:
         task = job.task
-        time.sleep(1.5)  # Simulate API latency
+        time.sleep(1.5)
 
         product_url = task.product_image_url
         if not product_url:
-            # Pearl jewelry default fallback
             product_url = "https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?w=500&auto=format&fit=crop"
 
         try:
             response = requests.get(product_url, timeout=10)
             product_img = Image.open(BytesIO(response.content)).convert("RGBA")
+            product_img = extract_product_with_floodfill(product_img)
         except Exception:
             product_img = Image.new("RGBA", (400, 400), (255, 215, 0, 255))
             draw = ImageDraw.Draw(product_img)
@@ -146,7 +156,7 @@ def _process_bg_generation(job_id, image_type, prompt, angle, theme):
             # Fallback to local Django storage
             filepath = os.path.join('generations', filename)
             stored_path = default_storage.save(filepath, ContentFile(img_buffer.getvalue()))
-            saved_url = f"{settings.FRONTEND_URL}/media/{stored_path}"
+            saved_url = f"{settings.BACKEND_URL}/media/{stored_path}"
 
         # Create Generation Image record
         gen_img = GeneratedImage.objects.create(
