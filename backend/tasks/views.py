@@ -274,7 +274,7 @@ def get_generations(request, pk):
 @permission_classes([IsAuthenticated])
 def delete_generation(request, pk):
     gen = get_object_or_404(GeneratedImage, pk=pk)
-    if request.user.role != 'admin' and gen.task.assigned_to != request.user:
+    if not _can_work_on_task(request.user, gen.task):
         return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
         
     gen.delete()

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { Task, User } from '@/types'
 import { deleteTask, assignTask, acceptTask, requestRevision } from '@/lib/tasks'
+import { sameUserId } from '@/lib/auth'
 import toast from 'react-hot-toast'
 import { Trash2, User as UserIcon, ArrowUpRight, Sparkles } from 'lucide-react'
 
@@ -38,7 +39,8 @@ export default function TaskCard({ task, currentUser, allUsers, onUpdate }: Task
   const [feedback, setFeedback] = useState('')
 
   const isAdmin = currentUser?.role === 'admin'
-  const isAssignedToMe = task.assigned_to?.id === currentUser?.id
+  const isAssignedToMe = sameUserId(task.assigned_to?.id, currentUser?.id)
+  const canOpen = isAdmin || isAssignedToMe || currentUser?.role === 'user'
 
   const handleDelete = async () => {
     if (!confirm('Are you sure you want to delete this task?')) return
@@ -116,7 +118,7 @@ export default function TaskCard({ task, currentUser, allUsers, onUpdate }: Task
             )}
           </div>
 
-          {(isAdmin || isAssignedToMe) ? (
+          {canOpen ? (
             <Link href={`/tasks/${task.id}`} className="text-base font-bold text-gray-900 mb-1 hover:text-indigo-600 block">
               {task.title}
             </Link>
@@ -159,7 +161,7 @@ export default function TaskCard({ task, currentUser, allUsers, onUpdate }: Task
 
         <div className="flex flex-row md:flex-col items-center md:items-end justify-between md:justify-start gap-3 border-t md:border-t-0 border-gray-100 pt-3 md:pt-0">
           <div className="flex items-center gap-2">
-            {(isAssignedToMe || isAdmin) ? (
+            {canOpen ? (
               <Link
                 href={`/tasks/${task.id}`}
                 className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 border border-indigo-600 text-white px-3 py-1.5 rounded text-xs font-semibold shadow-sm transition-colors cursor-pointer"

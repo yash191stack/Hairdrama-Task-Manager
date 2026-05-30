@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { getUser, logout, isAuthenticated } from '@/lib/auth'
+import { getUser, logout, isAuthenticated, refreshCurrentUser } from '@/lib/auth'
 import { User, Task, AuditLog } from '@/types'
 import { fetchTasks, fetchUsers, fetchAuditLogs } from '@/lib/tasks'
 import toast from 'react-hot-toast'
@@ -55,9 +55,10 @@ export default function DashboardPage() {
       router.push('/login')
       return
     }
-    const user = getUser()
-    setCurrentUser(user)
-    loadDashboardData()
+    refreshCurrentUser().then((user) => {
+      setCurrentUser(user || getUser())
+      loadDashboardData()
+    })
   }, [router, loadDashboardData])
 
   const pending = tasks.filter(t => t.status === 'pending').length

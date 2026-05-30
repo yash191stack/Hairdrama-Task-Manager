@@ -1,4 +1,5 @@
 import { User } from '@/types'
+import api from './api'
 
 export const saveTokens = (access: string, refresh: string) => {
   localStorage.setItem('access_token', access)
@@ -33,4 +34,19 @@ export const isAuthenticated = (): boolean => {
 export const logout = () => {
   removeTokens()
   window.location.href = '/login'
+}
+
+export const refreshCurrentUser = async (): Promise<User | null> => {
+  try {
+    const res = await api.get('/auth/me')
+    saveUser(res.data)
+    return res.data
+  } catch {
+    return getUser()
+  }
+}
+
+export function sameUserId(a?: string | null, b?: string | null) {
+  if (!a || !b) return false
+  return String(a) === String(b)
 }

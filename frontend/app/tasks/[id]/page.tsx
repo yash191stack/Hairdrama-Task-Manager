@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { getUser, isAuthenticated } from '@/lib/auth'
+import { getUser, isAuthenticated, refreshCurrentUser, sameUserId } from '@/lib/auth'
 import { User, Task, GeneratedImage } from '@/types'
 import {
   fetchTask,
@@ -63,8 +63,10 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       router.push('/login')
       return
     }
-    setCurrentUser(getUser())
-    loadTaskData()
+    refreshCurrentUser().then((user) => {
+      setCurrentUser(user || getUser())
+      loadTaskData()
+    })
   }, [router, loadTaskData])
 
   const handleStartTask = async () => {
@@ -194,9 +196,9 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
 
   if (!task) return null
 
-  const isAssignedToMe = task.assigned_to?.id === currentUser?.id
+  const isAssignedToMe = sameUserId(task.assigned_to?.id, currentUser?.id)
   const isAdmin = currentUser?.role === 'admin'
-  const canWorkOnTask = isAdmin || isAssignedToMe
+  const canWorkOnTask = isAdmin || isAssignedToMe || currentUser?.role === 'user'
   const canGenerate = canWorkOnTask && task.status === 'in_progress'
 
   return (
