@@ -21,6 +21,14 @@ def _oauth_login_response(provider, profile_data):
                 {'error': 'Google authentication failed', 'detail': hint},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
+        if provider == 'github':
+            return Response(
+                {
+                    'error': 'GitHub authentication failed',
+                    'detail': 'Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET on Railway, and NEXT_PUBLIC_GITHUB_CLIENT_ID on Vercel.',
+                },
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
         return Response({'error': 'Authentication failed'}, status=status.HTTP_401_UNAUTHORIZED)
 
     user = get_or_create_oauth_user(provider, profile_data)

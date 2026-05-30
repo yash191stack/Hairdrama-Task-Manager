@@ -12,6 +12,7 @@ urlpatterns = [
     path('api/users/', include('users.urls')),
     path('api/tasks/', include('tasks.urls')),
     path('api/jobs/<uuid:job_id>/status/', tasks_views.poll_job_status, name='poll-job-status'),
+    path('api/generations/<uuid:pk>/file/', tasks_views.serve_generation_file, name='serve-generation-file'),
     path('api/generations/<uuid:pk>/', tasks_views.delete_generation, name='delete-generation'),
 ]
 

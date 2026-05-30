@@ -40,11 +40,15 @@ def verify_google_token(token):
 
 def verify_github_code(code):
     try:
-        github_client_id = getattr(settings, 'GITHUB_CLIENT_ID', os.getenv('GITHUB_CLIENT_ID', ''))
-        github_client_secret = getattr(settings, 'GITHUB_CLIENT_SECRET', os.getenv('GITHUB_CLIENT_SECRET', ''))
+        github_client_id = (getattr(settings, 'GITHUB_CLIENT_ID', None) or os.getenv('GITHUB_CLIENT_ID', '')).strip()
+        github_client_secret = (getattr(settings, 'GITHUB_CLIENT_SECRET', None) or os.getenv('GITHUB_CLIENT_SECRET', '')).strip()
+
+        if not github_client_id or not github_client_secret:
+            logger.error('GitHub OAuth not configured: set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET on Railway')
+            return None
         
-        client_id = github_client_id if github_client_id else getattr(settings, 'GOOGLE_CLIENT_ID', '')
-        client_secret = github_client_secret if github_client_secret else getattr(settings, 'GOOGLE_CLIENT_SECRET', '')
+        client_id = github_client_id
+        client_secret = github_client_secret
         
         token_response = requests.post(
             'https://github.com/login/oauth/access_token',

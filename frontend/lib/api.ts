@@ -1,7 +1,18 @@
 import axios from 'axios'
 
+const PRODUCTION_API = 'https://hairdrama-task-manager-production.up.railway.app/api'
+
+function resolveApiBaseUrl() {
+  const configured = process.env.NEXT_PUBLIC_API_URL?.trim()
+  if (configured) return configured.replace(/\/$/, '')
+  if (typeof window !== 'undefined' && window.location.hostname.endsWith('vercel.app')) {
+    return PRODUCTION_API
+  }
+  return 'http://localhost:8000/api'
+}
+
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL,
+  baseURL: resolveApiBaseUrl(),
   headers: {
     'Content-Type': 'application/json',
   },

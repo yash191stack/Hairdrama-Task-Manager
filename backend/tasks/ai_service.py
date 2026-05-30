@@ -16,6 +16,8 @@ from .stability_client import (
     replace_background_and_relight,
 )
 
+from .storage_service import upload_generation
+
 logger = logging.getLogger(__name__)
 
 executor = ThreadPoolExecutor(max_workers=2)
@@ -111,8 +113,13 @@ def _save_generation(task, jpeg_bytes, image_type, prompt, angle, theme, meta):
     with open(filepath, "wb") as f:
         f.write(jpeg_bytes)
 
-    backend_url = getattr(settings, "BACKEND_URL", "http://localhost:8000")
-    saved_url = f"{backend_url}/media/generations/{filename}"
+    filename_only = filename
+    saved_url = upload_generation(filename_only, jpeg_bytes)
+    if not saved_url:
+        backend_url = getattr(settings, "BACKEND_URL", "http://localhost:8000").rstrip("/")
+        if "localhost" in backend_url and not settings.DEBUG:
+            backend_url = "https://hairdrama-task-manager-production.up.railway.app"
+        saved_url = f"{backend_url}/media/generations/{filename_only}"
 
     GeneratedImage.objects.create(
         task=task,

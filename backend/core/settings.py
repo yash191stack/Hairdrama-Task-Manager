@@ -134,10 +134,20 @@ RESEND_SENDER_EMAIL = os.getenv('RESEND_SENDER_EMAIL', 'onboarding@resend.dev').
 
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_ANON_KEY = os.getenv('SUPABASE_ANON_KEY')
+SUPABASE_SECRET_KEY = os.getenv('SUPABASE_SECRET_KEY', os.getenv('SUPABASE_SERVICE_KEY', ''))
+SUPABASE_STORAGE_BUCKET = os.getenv('SUPABASE_STORAGE_BUCKET', 'generations')
+GITHUB_CLIENT_ID = os.getenv('GITHUB_CLIENT_ID', '')
+GITHUB_CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET', '')
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
 GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
-BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8000')
+FRONTEND_URL = os.getenv(
+    'FRONTEND_URL',
+    'https://frontend-psi-drab-28.vercel.app' if not DEBUG else 'http://localhost:3001',
+)
+BACKEND_URL = os.getenv(
+    'BACKEND_URL',
+    'https://hairdrama-task-manager-production.up.railway.app' if not DEBUG else 'http://localhost:8000',
+)
 STABILITY_API_KEY = os.getenv('STABILITY_API_KEY', '').strip()
 
 LANGUAGE_CODE = 'en-us'

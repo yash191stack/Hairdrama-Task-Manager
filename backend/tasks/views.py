@@ -1,4 +1,8 @@
+import os
 import logging
+import requests
+from django.conf import settings
+from django.http import FileResponse, HttpResponse, Http404
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -12,6 +16,7 @@ from .models import Task, GeneratedImage, AuditLog, Job
 from .serializers import TaskSerializer, GeneratedImageSerializer, AuditLogSerializer
 from .email_service import send_task_assigned_email, send_task_submitted_email, send_task_accepted_email
 from .ai_service import trigger_bg_generation
+from .image_urls import generation_filename, resolve_generation_url
 
 logger = logging.getLogger(__name__)
 
@@ -236,11 +241,7 @@ def trigger_generation(request, pk):
 @permission_classes([AllowAny])
 def poll_job_status(request, job_id):
     job = get_object_or_404(Job, pk=job_id)
-    image_url = job.image_url or ''
-    if image_url and '/media/generations/' in image_url:
-        host = request.build_absolute_uri('/')[:-1]
-        filename = image_url.split('/media/generations/')[-1]
-        image_url = f"{host}/media/generations/{filename}"
+    image_url = resolve_generation_url(job.image_url or '', request=request)
     return Response({
         'job_id': str(job.id),
         'status': job.status,
@@ -258,6 +259,37 @@ def get_generations(request, pk):
     generations = task.generations.all()
     serializer = GeneratedImageSerializer(generations, many=True, context={'request': request})
     return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def serve_generation_file(request, pk):
+    gen = get_object_or_404(GeneratedImage, pk=pk)
+    stored = gen.image_url or ''
+
+    if stored.startswith('http') and 'supabase.co' in stored:
+        try:
+            resp = requests.get(stored, timeout=30)
+            if resp.ok:
+                return HttpResponse(resp.content, content_type=resp.headers.get('Content-Type', 'image/jpeg'))
+        except requests.RequestException:
+            pass
+
+    filename = generation_filename(stored)
+    if filename:
+        filepath = os.path.join(settings.MEDIA_ROOT, 'generations', filename)
+        if os.path.isfile(filepath):
+            return FileResponse(open(filepath, 'rb'), content_type='image/jpeg')
+
+        if settings.SUPABASE_URL:
+            from .storage_service import public_url
+            try:
+                resp = requests.get(public_url(filename), timeout=30)
+                if resp.ok:
+                    return HttpResponse(resp.content, content_type='image/jpeg')
+            except requests.RequestException:
+                pass
+
+    raise Http404('Image not found')
 
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])

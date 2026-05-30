@@ -2,6 +2,8 @@ from rest_framework import serializers
 from .models import Task, GeneratedImage, AuditLog
 from users.serializers import UserListSerializer
 
+from .image_urls import resolve_generation_url
+
 class GeneratedImageSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
 
@@ -11,22 +13,8 @@ class GeneratedImageSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
     def get_image_url(self, obj):
-        if not obj.image_url:
-            return ""
-        url = obj.image_url
         request = self.context.get('request')
-        if request:
-            host = request.build_absolute_uri('/')[:-1]
-            if "/media/generations/" in url:
-                filename = url.split("/media/generations/")[-1]
-                return f"{host}/media/generations/{filename}"
-        
-        from django.conf import settings
-        backend_url = getattr(settings, 'BACKEND_URL', 'http://localhost:8001')
-        if "/media/generations/" in url:
-            filename = url.split("/media/generations/")[-1]
-            return f"{backend_url}/media/generations/{filename}"
-        return url
+        return resolve_generation_url(obj.image_url, request=request, generation_id=obj.id)
 
 class TaskSerializer(serializers.ModelSerializer):
     created_by = UserListSerializer(read_only=True)

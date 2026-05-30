@@ -5,11 +5,11 @@ import Link from 'next/link'
 import { Task, User } from '@/types'
 import { deleteTask, assignTask, acceptTask, requestRevision } from '@/lib/tasks'
 import { sameUserId } from '@/lib/auth'
+import toast from 'react-hot-toast'
 
 function studioHref(taskId: string) {
   return `/dashboard?task=${taskId}`
 }
-import toast from 'react-hot-toast'
 import { Trash2, User as UserIcon, ArrowUpRight, Sparkles } from 'lucide-react'
 
 interface TaskCardProps {
