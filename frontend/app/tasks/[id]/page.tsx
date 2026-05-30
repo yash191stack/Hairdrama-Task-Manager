@@ -90,40 +90,40 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     }
   }
 
-  useEffect(() => {
-    if (!activeJobId) return
+  const [latestImageUrl, setLatestImageUrl] = useState<string | null>(null);
 
-    let intervalId: any
-    const checkJob = async () => {
+  // Poll job status every 2 seconds when a job is active
+  useEffect(() => {
+    if (!activeJobId) return;
+
+    const intervalId = setInterval(async () => {
       try {
-        const job = await pollJobStatus(activeJobId)
+        const job = await pollJobStatus(activeJobId);
         if (job.status === 'completed') {
-          clearInterval(intervalId)
-          setActiveJobId(null)
-          setGenerating(false)
-          toast.success('AI Image generated successfully!')
-          
-          const genData = await fetchGenerations(id)
-          setGenerations(genData)
-          
-          const taskData = await fetchTask(id)
-          setTask(taskData)
+          clearInterval(intervalId);
+          setActiveJobId(null);
+          setGenerating(false);
+          toast.success('AI Image generated successfully!');
+          setLatestImageUrl(job.image_url || null);
+          const genData = await fetchGenerations(id);
+          setGenerations(genData);
+          const taskData = await fetchTask(id);
+          setTask(taskData);
         } else if (job.status === 'failed') {
-          clearInterval(intervalId)
-          setActiveJobId(null)
-          setGenerating(false)
-          toast.error(job.error || 'AI generation failed.')
+          clearInterval(intervalId);
+          setActiveJobId(null);
+          setGenerating(false);
+          toast.error(job.error || 'AI generation failed.');
         }
       } catch {
-        clearInterval(intervalId)
-        setActiveJobId(null)
-        setGenerating(false)
+        clearInterval(intervalId);
+        setActiveJobId(null);
+        setGenerating(false);
       }
-    }
+    }, 2000);
 
-    intervalId = setInterval(checkJob, 2000)
-    return () => clearInterval(intervalId)
-  }, [activeJobId, id])
+    return () => clearInterval(intervalId);
+  }, [activeJobId, id]);
 
   const handleDeleteGen = async (genId: string) => {
     if (!confirm('Are you sure you want to delete this AI generation?')) return
@@ -297,7 +297,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                     {generating ? (
                       <>
                         <Loader className="w-4 h-4 animate-spin text-white" />
-                        Generating AI background...
+                        Generating with Stability AI...
                       </>
                     ) : (
                       <>
@@ -315,6 +315,12 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                 </div>
               )}
             </div>
+            {latestImageUrl && (
+              <div className="my-4">
+                <h3 className="text-sm font-bold mb-2">Latest Generated Image</h3>
+                <img src={latestImageUrl} alt="Generated" className="max-w-full rounded border" />
+              </div>
+            )}
           </div>
 
           <div className="w-full lg:w-80 space-y-6">
@@ -332,7 +338,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                 <div className="aspect-square bg-gray-150 border border-gray-200 rounded flex flex-col items-center justify-center text-gray-400 gap-1.5 p-4 text-center">
                   <Flame size={20} />
                   <p className="text-[10px] font-bold uppercase tracking-wider">No Image</p>
-                  <p className="text-[9px] text-gray-500">Will composite standard fallback pearl jewelry vectors.</p>
+                  <p className="text-[9px] text-gray-500">Upload a product image before generating.</p>
                 </div>
               )}
             </div>
@@ -374,7 +380,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
 
           {generations.length === 0 ? (
             <div className="text-center py-20 text-gray-400 text-xs font-semibold border border-gray-200 border-dashed rounded-lg">
-              No composite variations generated yet. Let's trigger a generation!
+              No generations yet. Pick a type and run the studio.
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

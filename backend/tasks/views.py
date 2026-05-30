@@ -47,14 +47,14 @@ def task_list_create(request):
             tasks = Task.objects.all()
         else:
             tasks = Task.objects.filter(assigned_to=request.user)
-        serializer = TaskSerializer(tasks, many=True)
+        serializer = TaskSerializer(tasks, many=True, context={'request': request})
         return Response(serializer.data)
 
     elif request.method == 'POST':
         if request.user.role != 'admin':
             return Response({'error': 'Admin permission required'}, status=status.HTTP_403_FORBIDDEN)
         
-        serializer = TaskSerializer(data=request.data)
+        serializer = TaskSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             task = serializer.save(created_by=request.user)
             if task.assigned_to:
@@ -71,7 +71,7 @@ def task_list_create(request):
 @permission_classes([IsAuthenticated])
 def my_tasks(request):
     tasks = Task.objects.filter(assigned_to=request.user)
-    serializer = TaskSerializer(tasks, many=True)
+    serializer = TaskSerializer(tasks, many=True, context={'request': request})
     return Response(serializer.data)
 
 @api_view(['GET', 'DELETE'])
@@ -83,7 +83,7 @@ def task_detail(request, pk):
         return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
     if request.method == 'GET':
-        serializer = TaskSerializer(task)
+        serializer = TaskSerializer(task, context={'request': request})
         return Response(serializer.data)
 
     elif request.method == 'DELETE':
@@ -110,7 +110,7 @@ def assign_task(request, pk):
     except Exception as e:
         logger.error(e)
         
-    serializer = TaskSerializer(task)
+    serializer = TaskSerializer(task, context={'request': request})
     return Response(serializer.data)
 
 @api_view(['PUT'])
@@ -125,7 +125,7 @@ def accept_task(request, pk):
     except Exception as e:
         logger.error(e)
         
-    serializer = TaskSerializer(task)
+    serializer = TaskSerializer(task, context={'request': request})
     return Response(serializer.data)
 
 @api_view(['PUT'])
@@ -146,7 +146,7 @@ def request_revision(request, pk):
     except Exception as e:
         logger.error(e)
         
-    serializer = TaskSerializer(task)
+    serializer = TaskSerializer(task, context={'request': request})
     return Response(serializer.data)
 
 @api_view(['PUT'])
@@ -159,7 +159,7 @@ def start_task(request, pk):
     task.status = 'in_progress'
     task.save()
     
-    serializer = TaskSerializer(task)
+    serializer = TaskSerializer(task, context={'request': request})
     return Response(serializer.data)
 
 @api_view(['POST'])
@@ -180,7 +180,7 @@ def submit_task(request, pk):
     except Exception as e:
         logger.error(e)
         
-    serializer = TaskSerializer(task)
+    serializer = TaskSerializer(task, context={'request': request})
     return Response(serializer.data)
 
 @api_view(['POST'])
@@ -219,10 +219,15 @@ def trigger_generation(request, pk):
 @permission_classes([AllowAny])
 def poll_job_status(request, job_id):
     job = get_object_or_404(Job, pk=job_id)
+    image_url = job.image_url or ''
+    if image_url and '/media/generations/' in image_url:
+        host = request.build_absolute_uri('/')[:-1]
+        filename = image_url.split('/media/generations/')[-1]
+        image_url = f"{host}/media/generations/{filename}"
     return Response({
         'job_id': str(job.id),
         'status': job.status,
-        'image_url': job.image_url,
+        'image_url': image_url,
         'error': job.error
     })
 
@@ -234,7 +239,7 @@ def get_generations(request, pk):
         return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
         
     generations = task.generations.all()
-    serializer = GeneratedImageSerializer(generations, many=True)
+    serializer = GeneratedImageSerializer(generations, many=True, context={'request': request})
     return Response(serializer.data)
 
 @api_view(['DELETE'])
