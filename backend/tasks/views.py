@@ -20,6 +20,17 @@ class AIGeneratorThrottle(UserRateThrottle):
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
+def api_root(request):
+    return Response({
+        "service": "Hairdrama Task Manager API",
+        "status": "online",
+        "health": "/api/tasks/system-health/",
+        "docs_hint": "Use the Next.js frontend; API routes live under /api/",
+    })
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
 def system_health_check(request):
     db_status = "Healthy"
     try:

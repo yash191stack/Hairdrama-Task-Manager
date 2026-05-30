@@ -203,10 +203,64 @@ python manage.py migrate
 
 ---
 
-## Deployment Notes
+## Deployment (Vercel + Railway)
 
-- **Vercel** auto-deploys frontend on every push to `main`
-- **Railway** auto-deploys backend on every push to `main`
-- **Supabase** is always-on managed PostgreSQL — no setup needed after initial migration
-- Google Console has both localhost and production URLs whitelisted for OAuth
+Already configured: frontend on **Vercel**, backend on **Railway**, DB on **Supabase**.
+
+### 1. Push code (you did this)
+```bash
+git push origin main
+```
+
+### 2. Railway (backend)
+
+Open project → **Variables** → set / update:
+
+| Variable | Example |
+|----------|---------|
+| `SECRET_KEY` | long random string |
+| `DEBUG` | `False` |
+| `ALLOWED_HOSTS` | `hairdrama-task-manager-production.up.railway.app,.railway.app` |
+| `DATABASE_URL` | `postgresql://...@db.xxx.supabase.co:5432/postgres` |
+| `DB_PASSWORD` | same as in Supabase |
+| `GOOGLE_CLIENT_ID` | from Google Console |
+| `GOOGLE_CLIENT_SECRET` | from Google Console |
+| `STABILITY_API_KEY` | your new Stability key |
+| `BACKEND_URL` | `https://hairdrama-task-manager-production.up.railway.app` |
+| `FRONTEND_URL` | `https://frontend-psi-drab-28.vercel.app` |
+| `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | optional |
+
+Then **Deploy** / wait for auto-deploy from `main`.
+
+**Generated images:** saved under `media/` on the server. Add a **Railway Volume** mounted at `/app/media` (or your app root `media`) so images survive redeploys.
+
+### 3. Vercel (frontend)
+
+Project → **Settings → Environment Variables**:
+
+| Variable | Value |
+|----------|--------|
+| `NEXT_PUBLIC_API_URL` | `https://hairdrama-task-manager-production.up.railway.app/api` |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | same as backend |
+
+Redeploy (or auto from `main`).
+
+### 4. Google OAuth
+
+[Google Cloud Console](https://console.cloud.google.com/) → OAuth client → add:
+
+- **Authorized JavaScript origins:** `https://frontend-psi-drab-28.vercel.app`
+- **Authorized redirect URIs:** same + any paths your app uses
+
+### 5. Smoke test
+
+1. Open production frontend → login with Google  
+2. Open task → Start → Generate (white / theme / model)  
+3. Wait ~30–90s → image appears in gallery  
+4. If images 404: check `BACKEND_URL` on Railway and media volume  
+
+### Local vs production
+
+- Never commit `backend/.env` — only set secrets in Railway / Vercel dashboards.  
+- After changing API key on Railway, click **Redeploy** (no code change needed if vars only).
 
