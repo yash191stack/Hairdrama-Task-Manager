@@ -1,58 +1,122 @@
+import os
 import requests
+from django.conf import settings
 from .models import User
 
-
 def verify_google_token(token):
-    """
-    Google Login component ID token bhejta hai
-    is endpoint se verify karte hain
-    """
     try:
-        # pehle ID token try karo
-        response = requests.get(
-            f'https://oauth2.googleapis.com/tokeninfo?id_token={token}'
-        )
+        response = requests.get(f'https://oauth2.googleapis.com/tokeninfo?id_token={token}', timeout=10)
         if response.status_code == 200:
             return response.json()
-
-        # agar ID token nahi to access token try karo
+        
         response = requests.get(
             'https://www.googleapis.com/oauth2/v3/userinfo',
-            headers={'Authorization': f'Bearer {token}'}
+            headers={'Authorization': f'Bearer {token}'},
+            timeout=10
         )
         if response.status_code == 200:
             return response.json()
-
+        return None
+    except Exception:
         return None
 
-    except Exception as e:
-        print(f'Token verification error: {e}')
+def verify_github_code(code):
+    try:
+        github_client_id = getattr(settings, 'GITHUB_CLIENT_ID', os.getenv('GITHUB_CLIENT_ID', ''))
+        github_client_secret = getattr(settings, 'GITHUB_CLIENT_SECRET', os.getenv('GITHUB_CLIENT_SECRET', ''))
+        
+        client_id = github_client_id if github_client_id else getattr(settings, 'GOOGLE_CLIENT_ID', '')
+        client_secret = github_client_secret if github_client_secret else getattr(settings, 'GOOGLE_CLIENT_SECRET', '')
+        
+        token_response = requests.post(
+            'https://github.com/login/oauth/access_token',
+            headers={'Accept': 'application/json'},
+            data={
+                'client_id': client_id,
+                'client_secret': client_secret,
+                'code': code
+            },
+            timeout=10
+        )
+        
+        if token_response.status_code != 200:
+            return None
+            
+        token_data = token_response.json()
+        access_token = token_data.get('access_token')
+        if not access_token:
+            return None
+            
+        user_response = requests.get(
+            'https://api.github.com/user',
+            headers={'Authorization': f'token {access_token}'},
+            timeout=10
+        )
+        if user_response.status_code != 200:
+            return None
+            
+        user_data = user_response.json()
+        
+        if not user_data.get('email'):
+            emails_response = requests.get(
+                'https://api.github.com/user/emails',
+                headers={'Authorization': f'token {access_token}'},
+                timeout=10
+            )
+            if emails_response.status_code == 200:
+                for email_info in emails_response.json():
+                    if email_info.get('primary') and email_info.get('verified'):
+                        user_data['email'] = email_info.get('email')
+                        break
+                        
+        return user_data
+    except Exception:
         return None
 
+def get_or_create_oauth_user(provider, profile_data):
+    email = profile_data.get('email')
+    if not email:
+        login = profile_data.get('login', 'github_user')
+        email = f"{login}@github.temphub.com"
 
-def get_or_create_user(google_data):
-    email = google_data.get('email')
-    google_id = google_data.get('sub')
-    name = google_data.get('name', '')
-    avatar = google_data.get('picture', '')
+    google_id = profile_data.get('sub') if provider == 'google' else None
+    github_id = str(profile_data.get('id')) if provider == 'github' else None
+    name = profile_data.get('name') or profile_data.get('login') or email.split('@')[0]
+    avatar = profile_data.get('picture') if provider == 'google' else profile_data.get('avatar_url')
 
-    user = User.objects.filter(google_id=google_id).first()
-    if user:
-        user.avatar = avatar
-        user.save(update_fields=['avatar'])
-        return user
+    if google_id:
+        user = User.objects.filter(google_id=google_id).first()
+        if user:
+            user.avatar = avatar
+            user.save(update_fields=['avatar'])
+            return user
+
+    if github_id:
+        user = User.objects.filter(github_id=github_id).first()
+        if user:
+            user.avatar = avatar
+            user.save(update_fields=['avatar'])
+            return user
 
     user = User.objects.filter(email=email).first()
     if user:
-        user.google_id = google_id
+        if google_id:
+            user.google_id = google_id
+        if github_id:
+            user.github_id = github_id
         user.avatar = avatar
-        user.save(update_fields=['google_id', 'avatar'])
+        user.save(update_fields=['google_id', 'github_id', 'avatar'])
         return user
+
+    is_first = User.objects.count() == 0
+    role = 'admin' if is_first else 'user'
 
     user = User.objects.create_user(
         email=email,
         name=name,
         google_id=google_id,
-        avatar=avatar
+        github_id=github_id,
+        avatar=avatar,
+        role=role
     )
     return user
